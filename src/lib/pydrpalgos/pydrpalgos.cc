@@ -6,6 +6,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <cstdint>
 #include <string>
 
 namespace py = pybind11;
@@ -28,6 +29,14 @@ PYBIND11_MODULE(_drpalgos, drpalgos_module, py::mod_gil_not_used()) {
     .def_readwrite("slots", &DrpAlgos::HostConfig::slots)
     .def_readwrite("inElems", &DrpAlgos::HostConfig::inElems);
 
+  py::classh<DrpAlgos::EventResult>(drpalgos_module, "EventResult")
+    .def_property_readonly("payload",
+                           [](const DrpAlgos::EventResult& self) {
+                             return py::array_t<std::uint8_t>(static_cast<py::ssize_t>(self.payload.size()),
+                                                              self.payload.data());
+                           })
+    .def_readonly("deviceMs", &DrpAlgos::EventResult::deviceMs);
+
   py::classh<DrpAlgos::BenchResult>(drpalgos_module, "BenchResult")
     .def(py::init<>())
     .def(py::init<std::size_t, float, float, float>())
@@ -47,9 +56,18 @@ PYBIND11_MODULE(_drpalgos, drpalgos_module, py::mod_gil_not_used()) {
          >())
     .def("payloadSize", &DrpAlgos::AlgorithmHost::payloadSize)
     .def("variableSize", &DrpAlgos::AlgorithmHost::variableSize)
-    //.def("process",
-    //     &DrpAlgos::AlgorithmHost::process,
-    //     py::arg("frame")) // Need to convert to NumPy array
+    .def("process",
+         [](DrpAlgos::AlgorithmHost& self,
+            py::array_t<float> frame) {
+           DrpAlgos::EventResult result;
+           {
+             py::gil_scoped_release release;
+             result = self.process(frame.data());
+           }
+
+           return result;
+         },
+         py::arg("frame"))
     .def("benchmark",
          &DrpAlgos::AlgorithmHost::benchmark,
          py::arg("iterations"));
