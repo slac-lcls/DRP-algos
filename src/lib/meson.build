@@ -1,1 +1,2 @@
 subdir('DrpAlgos')
+subdir('pydrpalgos')
