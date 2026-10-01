@@ -47,13 +47,17 @@ PYBIND11_MODULE(_drpalgos, drpalgos_module, py::mod_gil_not_used()) {
 
 
   py::classh<DrpAlgos::AlgorithmHost>(drpalgos_module, "AlgorithmHost")
-    .def(py::init<
-           const std::string&,
-           const DrpAlgos::Version&,
-           const std::string&,
-           const nlohmann::json&,
-           DrpAlgos::HostConfig
-         >())
+    .def(py::init([](const std::string& name,
+                     const DrpAlgos::Version& version,
+                     const std::string& soname,
+                     const std::string params,
+                     DrpAlgos::HostConfig cfg) {
+      return std::make_unique<DrpAlgos::AlgorithmHost>(name,
+                                                       version,
+                                                       soname,
+                                                       nlohmann::json::parse(params),
+                                                       cfg);
+    }))
     .def("payloadSize", &DrpAlgos::AlgorithmHost::payloadSize)
     .def("variableSize", &DrpAlgos::AlgorithmHost::variableSize)
     .def("process",
