@@ -14,7 +14,7 @@ PYBIND11_MODULE(_drpalgos, drpalgos_module, py::mod_gil_not_used()) {
   py::classh<DrpAlgos::Version>(drpalgos_module, "Version")
     .def(py::init<>())
     .def(py::init<unsigned, unsigned, unsigned>())
-    .def(py::init([](DrpAlgos::Version& self, const std::string& s) {
+    .def(py::init([](const std::string& s) {
       return DrpAlgos::Version::parse(s);
     }))
     .def("toString", &DrpAlgos::Version::toString)
