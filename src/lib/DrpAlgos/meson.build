@@ -86,8 +86,29 @@ DrpAlgos_dep = declare_dependency(
 )
 meson.override_dependency('DrpAlgos', DrpAlgos_dep)
 
+DrpAlgosHost_lib = shared_library(
+    'DrpAlgosHost',
+    [
+        'host/AlgorithmHost.cu',
+    ],
+    include_directories: [drp_algos_include],
+    install: true,
+    install_rpath: lib_install_rpath,
+    cuda_args: drp_algos_cuda_args,
+    dependencies: deps_for_drp_algos + DrpAlgosCore_dep,
+    gnu_symbol_visibility: 'inlineshidden',
+)
+
+DrpAlgosHost_dep = declare_dependency(
+    link_with: [DrpAlgosHost_lib],
+    dependencies: deps_for_drp_algos + DrpAlgosCore_dep,
+    include_directories: drp_algos_include,
+)
+meson.override_dependency('DrpAlgosHost', DrpAlgosHost_dep)
+
 subdir('algorithms')
 subdir('drp')
+subdir('host')
 
 # Install the headers for usage
 

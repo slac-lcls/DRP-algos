@@ -180,6 +180,12 @@ endif # not nlohmann_json_dep.found()
 
 deps_for_drp_algos = [cuda_dep, cuda_driver_dep, dl_dep, nlohmann_json_dep]
 
+pybind11_dep = dependency('pybind11', required: false)
+if not pybind11_dep.found()
+    pybind11_proj = subproject('pybind11')
+    pybind11_dep = pybind11_proj.get_variable('pybind11_dep')
+endif
+
 subdir('src')
 
 # Setup pkg-config for simplicity, AFTER the subdirs are traversed
