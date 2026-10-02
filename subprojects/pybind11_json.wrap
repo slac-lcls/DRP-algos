@@ -1,0 +1,8 @@
+[wrap-file]
+directory = pybind11_json-0.2.15
+source_url = https://github.com/pybind/pybind11_json/archive/refs/tags/0.2.15.tar.gz
+source_filename = pybind11_json-0.2.15.tar.gz
+source_hash = 9a4a1494549a2db27bc4c5a16743a5c88ebc18e13c73019c56f399ae0310baf2
+
+[provide]
+pybind11_json = pybind11_json_dep
