@@ -5,6 +5,7 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11_json/pybind11_json.hpp>
 
 #include <cstdint>
 #include <string>
@@ -50,12 +51,12 @@ PYBIND11_MODULE(_drpalgos, drpalgos_module, py::mod_gil_not_used()) {
     .def(py::init([](const std::string& name,
                      const std::string& version,
                      const std::string& soname,
-                     const std::string params,
+                     const nlohmann::json& params,
                      DrpAlgos::HostConfig cfg) {
       return std::make_unique<DrpAlgos::AlgorithmHost>(name,
                                                        DrpAlgos::Version::parse(version),
                                                        soname,
-                                                       nlohmann::json::parse(params),
+                                                       params,
                                                        cfg);
     }),
          py::arg("name"),
@@ -63,17 +64,13 @@ PYBIND11_MODULE(_drpalgos, drpalgos_module, py::mod_gil_not_used()) {
          py::arg("soname"),
          py::arg("params"),
          py::arg("cfg"))
-    .def(py::init([](const std::string& name,
-                     const DrpAlgos::Version& version,
-                     const std::string& soname,
-                     const std::string params,
-                     DrpAlgos::HostConfig cfg) {
-      return std::make_unique<DrpAlgos::AlgorithmHost>(name,
-                                                       version,
-                                                       soname,
-                                                       nlohmann::json::parse(params),
-                                                       cfg);
-    }),
+    .def(py::init<
+           const std::string&,
+           const DrpAlgos::Version&,
+           const std::string&,
+           const nlohmann::json&,
+           DrpAlgos::HostConfig
+         >(),
          py::arg("name"),
          py::arg("version"),
          py::arg("soname"),
