@@ -160,11 +160,17 @@ cuda_driver = cpp.find_library(
     dirs: [cuda_lib_dirs, join_paths(cuda_path, 'lib64/stubs'),],
     required: true,
 )
+
+cuda_includes = [
+    join_paths(cuda_path, 'targets/x86_64-linux/include')
+]
+if cuda_version.version_compare('>=13.0')
+    cuda_includes += [
+        join_paths(cuda_path, 'targets/x86_64-linux/include/cccl')
+    ]
+endif
 cuda_driver_dep = declare_dependency(
-    include_directories: include_directories([
-        join_paths(cuda_path, 'targets/x86_64-linux/include'),
-        join_paths(cuda_path, 'targets/x86_64-linux/include/cccl'),
-    ]),
+    include_directories: include_directories(cuda_includes),
     dependencies: [cuda_driver],
 )
 
