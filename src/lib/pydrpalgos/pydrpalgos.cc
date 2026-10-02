@@ -61,8 +61,7 @@ PYBIND11_MODULE(_drpalgos, drpalgos_module, py::mod_gil_not_used()) {
     .def("payloadSize", &DrpAlgos::AlgorithmHost::payloadSize)
     .def("variableSize", &DrpAlgos::AlgorithmHost::variableSize)
     .def("process",
-         [](DrpAlgos::AlgorithmHost& self,
-            py::array_t<float> frame) {
+         [](DrpAlgos::AlgorithmHost& self, py::array_t<float> frame) {
            DrpAlgos::EventResult result;
            {
              py::gil_scoped_release release;
@@ -72,6 +71,40 @@ PYBIND11_MODULE(_drpalgos, drpalgos_module, py::mod_gil_not_used()) {
            return result;
          },
          py::arg("frame"))
+    .def("process_many",
+         [](DrpAlgos::AlgorithmHost& self, py::array_t<float> frames) {
+           // Handling variably sized output will be harder I think...
+           // Just deal with the fixed-size reducers here for now
+           if (self.variableSize()) {
+             throw std::runtime_error("Variably sized reducers do not support batch "
+                                      "processing right now. Process each frame with "
+                                      "the `process` method.");
+           }
+
+           const auto payload_size { static_cast<py::ssize_t>(self.payloadSize()) };
+           const py::ssize_t num_frames { frames.shape(0) };
+           const auto num_elem {
+             static_cast<unsigned long long>(frames.size() / num_frames)
+           };
+
+           py::array_t<std::uint8_t> reduced_out({ num_frames, payload_size });
+           std::uint8_t* dest_ptr { reduced_out.mutable_data() };
+           const float* src_ptr { frames.data() };
+
+           {
+             py::gil_scoped_release release;
+             for (py::ssize_t i = 0; i < num_frames; ++i) {
+               const auto res { self.process(src_ptr + i * num_elem) };
+
+               std::memcpy(dest_ptr + i * payload_size,
+                           res.payload.data(),
+                           res.payload.size());
+             }
+           }
+
+           return reduced_out;
+         },
+         py::arg("frames"))
     .def("benchmark",
          &DrpAlgos::AlgorithmHost::benchmark,
          py::arg("iterations"));
