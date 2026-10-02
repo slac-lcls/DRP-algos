@@ -194,7 +194,10 @@ if [[ ${DEBUG} ]]; then
     RELTYPE="debugoptimized"
 fi
 
-SETUP_KWARGS="-Dbuildtype=${RELTYPE}"
+SETUP_KWARGS="-Dbuildtype=${RELTYPE} -Dcpp_link_args=[] -Dcuda_link_args=[]"
+if [[ -n "${CONDA_PREFIX}" ]]; then
+    SETUP_KWARGS="${SETUP_KWARGS} -Dconda_prefix=${CONDA_PREFIX}"
+fi
 
 LINES=("Selected configuration: ${SETUP_KWARGS}")
 print_banner "${LINES[@]}"
