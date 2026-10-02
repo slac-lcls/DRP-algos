@@ -81,13 +81,13 @@ namespace DrpAlgos {
 
     ParamT m_params {}; ///< Host-side parameters constructed by nlohmann/json
 
-  private:
     static void check(cudaError_t err, const char* what) {
       if (err != cudaSuccess) {
         throw std::runtime_error(std::string(what) + ": " + cudaGetErrorString(err));
       }
     }
 
+  private:
     void* m_devParams { nullptr }; ///< Device-side parameters copy
   };
 } // namespace DrpAlgos
