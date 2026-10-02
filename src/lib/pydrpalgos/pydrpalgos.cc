@@ -48,6 +48,22 @@ PYBIND11_MODULE(_drpalgos, drpalgos_module, py::mod_gil_not_used()) {
 
   py::classh<DrpAlgos::AlgorithmHost>(drpalgos_module, "AlgorithmHost")
     .def(py::init([](const std::string& name,
+                     const std::string& version,
+                     const std::string& soname,
+                     const std::string params,
+                     DrpAlgos::HostConfig cfg) {
+      return std::make_unique<DrpAlgos::AlgorithmHost>(name,
+                                                       DrpAlgos::Version::parse(version),
+                                                       soname,
+                                                       nlohmann::json::parse(params),
+                                                       cfg);
+    }),
+         py::arg("name"),
+         py::arg("version"),
+         py::arg("soname"),
+         py::arg("params"),
+         py::arg("cfg"))
+    .def(py::init([](const std::string& name,
                      const DrpAlgos::Version& version,
                      const std::string& soname,
                      const std::string params,
@@ -57,7 +73,12 @@ PYBIND11_MODULE(_drpalgos, drpalgos_module, py::mod_gil_not_used()) {
                                                        soname,
                                                        nlohmann::json::parse(params),
                                                        cfg);
-    }))
+    }),
+         py::arg("name"),
+         py::arg("version"),
+         py::arg("soname"),
+         py::arg("params"),
+         py::arg("cfg"))
     .def("payloadSize", &DrpAlgos::AlgorithmHost::payloadSize)
     .def("variableSize", &DrpAlgos::AlgorithmHost::variableSize)
     .def("process",
@@ -91,6 +112,7 @@ PYBIND11_MODULE(_drpalgos, drpalgos_module, py::mod_gil_not_used()) {
            std::uint8_t* dest_ptr { reduced_out.mutable_data() };
            const float* src_ptr { frames.data() };
 
+           double deviceMs { 0.0 };
            {
              py::gil_scoped_release release;
              for (py::ssize_t i = 0; i < num_frames; ++i) {
@@ -99,8 +121,13 @@ PYBIND11_MODULE(_drpalgos, drpalgos_module, py::mod_gil_not_used()) {
                std::memcpy(dest_ptr + i * payload_size,
                            res.payload.data(),
                            res.payload.size());
+               deviceMs += res.deviceMs;
              }
            }
+
+           // Print (device) processing time as well
+           std::printf("mean device time per event: %.2f us\n",
+                       1000.0 * deviceMs / num_frames);
 
            return reduced_out;
          },
