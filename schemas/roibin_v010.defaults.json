@@ -1,0 +1,10 @@
+{
+    "in_shape": [6, 168, 192],
+    "roi_start": [0, 0, 0],
+    "roi_shape": [6, 168, 192],
+    "bin": [2, 2, 2],
+    "frames": 4,
+    "use_threshold": 0,
+    "threshold": 0.0,
+    "scale": 1.0
+}

@@ -67,6 +67,7 @@ DrpAlgos_lib = shared_library('DrpAlgos',
   [
       'drp/BinningV0.cu',
       'drp/BinningV020.cc',
+      'drp/ROIBinV010.cu',
   ] + binning_v020_cc,
   include_directories: [drp_algos_include],
   install: true,
