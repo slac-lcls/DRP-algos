@@ -68,6 +68,8 @@ drp_algos_cuda_args = [
     '--expt-relaxed-constexpr',
     '-Xcompiler=-fPIC',
     '-Xfatbin','-compress-all',
+    '-Xcompiler=-fvisibility=hidden',
+    '-Xcompiler=-fvisibility-inlines-hidden',
 ]
 # Generate PTX for forward compatibility on the Hopper build
 drp_algos_cuda_args += [
