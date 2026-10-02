@@ -9,7 +9,7 @@ namespace DrpAlgos::algorithms {
    * are in units of "elements". A separate scaling factor is provided as input. In
    * general, you will likely scale by the binning factor, but this is not required.
    *
-   * @note The function runs with a grid-stride over the `num_elem` input elements for
+   * @note The function runs with a grid-stride over the `num_elem` output elements for
    *       binning.
    * @note This function requires that the input and output be of the same datatype.
    *       I.e., it will not handle conversion between float/double/integer etc.
@@ -24,7 +24,7 @@ namespace DrpAlgos::algorithms {
    * @param[in] x_start The starting offset in the `x` (third) dimension.
    * @param[in] y_len_out The output y-dimension shape.
    * @param[in] x_len_out The output x-dimension shape.
-   * @param[in] n The number of input elements to process for this thread.
+   * @param[in] n The number of output elements to process for this thread.
    * @param[in] bin_asic The binning factor along the `asic` (first) dimension.
    * @param[in] bin_y The binning factor along the `y` (second) dimension.
    * @param[in] bin_x The binning factor along the `x` (third) dimension.
@@ -58,7 +58,7 @@ namespace DrpAlgos::algorithms {
       const unsigned y_off { (i / x_len_out) % y_len_out };
       const unsigned a_off { i / (x_len_out * y_len_out) };
 
-      float sum { 0.0f };
+      DType sum {};
       for (unsigned da = 0; da < bin_asic; ++da) {
         for (unsigned dy = 0; dy < bin_y; ++dy) {
           for (unsigned dx = 0; dx < bin_x; ++dx) {
@@ -67,8 +67,8 @@ namespace DrpAlgos::algorithms {
               + (x_start + x_off * bin_x + dx)
             };
 
-            const float val { in[offset] };
-            sum += (apply_threshold && val < threshold) ? 0.0f : val;
+            const DType val { in[offset] };
+            sum += (apply_threshold && val < threshold) ? DType {} : val;
           }
         }
       }
@@ -83,7 +83,7 @@ namespace DrpAlgos::algorithms {
    * This "time" binning routine sums contiguous frames. It assumes that the inputs
    * are arranged in a fixed, deterministic, order in a single buffer without gaps.
    *
-   * @note The function runs with a grid-stride over the `num_elem` input.
+   * @note The function runs with a grid-stride over the `num_elem` output.
    * @note This function requires that the input and output be of the same datatype.
    *       I.e., it will not handle conversion between float/double/integer etc.
    *
@@ -102,10 +102,10 @@ namespace DrpAlgos::algorithms {
     const unsigned stride { blockDim.x * gridDim.x };
 
     for (unsigned i = idx; i < num_elem; i += stride) {
-      float sum { 0.0f };
+      DType sum {};
       for (unsigned f_idx = 0; f_idx < num_frames; ++f_idx) {
         unsigned long long f_offset {
-          static_cast<unsigned long long>(f_idx) * num_elem + 1
+          static_cast<unsigned long long>(f_idx) * num_elem + i
         };
         sum += frames[f_offset];
       }
