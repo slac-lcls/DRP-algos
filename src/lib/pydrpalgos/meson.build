@@ -9,7 +9,11 @@ py_to_lib_rel = fs.relative_to(lib_dir_abs, pydrpalgos_install_dir)
 
 py_to_lib_install_rpath = '$ORIGIN' + ':' + ('$ORIGIN' / py_to_lib_rel) + ':' + lib_install_rpath
 
-deps_for_py_mod = [DrpAlgosHost_dep, py3_dep, pybind11_dep]
+# Use pybind11_json for nlohmann JSON support in bindings
+pybind11_json_proj = subproject('pybind11_json')
+pybind11_json_dep = pybind11_json_proj.get_variable('pybind11_json_dep')
+
+deps_for_py_mod = [DrpAlgosHost_dep, py3_dep, pybind11_dep, pybind11_json_dep]
 
 py_mod = py3.extension_module(
     '_drpalgos',

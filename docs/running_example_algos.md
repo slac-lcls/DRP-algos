@@ -58,19 +58,33 @@ export PYTHONPATH=$(pwd)/install/lib/python3.9/site-packages:$PYTHONPATH
 The following example script can then be used to run a benchmark run as above:
 ```python
 import json
+
+import numpy as np
+import numpy.typing as npt
+
 import drpalgos
 
 with open("schemas/binning_v020.defaults.json", "r") as f:
     params = json.load(f)
 
-AlgHost: drpalgos.AlgorithmHost = drpalgos.AlgorithmHost(
+alg_host: drpalgos.AlgorithmHost = drpalgos.AlgorithmHost(
     "Binning",
     drpalgos.Version("0.2.0"),
     "libDrpAlgos.so",
-    json.dumps(params),
+    params,
     drpalgos.HostConfig(4, 6*192*168)
 )
 
-AlgHost.benchmark(10000).maxUs
-# 21.503999710083008
+# Isolated kernel testing
+
+print(alg_host.benchmark(10000).meanUs)
+# 7.5193586349487305
+
+# Testing more realistic DRP cycle
+# Create input array. First dimension is number of "events". Must be float32
+frames: npt.NDArray[np.float32] = np.random.random((100,6, 168, 192)).astype(np.float32)
+out: npt.NDArray[np.float32] = alg_host.process_many(frames).view(np.float32).reshape(100, 3, 84, 96)
+# mean device time per event: 9.58 us
 ```
+
+The batch process routine `alg_host.process_many` will execute a more realistic surrogate of the actual DRP behaviour. The `benchmark` method tests the algorithm kernel(s) in a more isolated manner.
