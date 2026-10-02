@@ -1,0 +1,11 @@
+{
+    "name": "Binning",
+    "version": "v0.2.0",
+    "soname": "libDrpAlgos.so",
+    "parameters": {
+        "in_shape": { "type": "array", "items": { "type": "UINT32", "rank": 1 } },
+        "bin":      { "type": "array", "items": { "type": "UINT32", "rank": 1 } },
+        "scale":    { "type": "FLOAT" }
+    },
+    "required": ["in_shape", "bin", "scale"]
+}
