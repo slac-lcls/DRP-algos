@@ -1,5 +1,5 @@
 {
-    "name": "RoiBin",
+    "name": "ROIBin",
     "version": "v0.1.0",
     "soname": "libDrpAlgos.so",
     "parameters": {
