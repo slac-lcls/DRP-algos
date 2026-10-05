@@ -84,8 +84,6 @@ namespace DrpAlgos {
       throw std::invalid_argument("AlgorithmHost: slots must be >= workers");
     }
 
-    //m_desc = KernelRegistry::instance().create(name, version, soname);
-    //m_desc->configure(params);
     m_workers.resize(cfg.workers);
     for (Worker& worker : m_workers) {
       worker.desc = KernelRegistry::instance().create(name, version, soname);
@@ -105,8 +103,6 @@ namespace DrpAlgos {
       check(cudaMemset(m_in, 0, inBytes), "cudaMemset(in)");
       check(cudaMalloc(&m_outBase, kHeader + static_cast<std::size_t>(cfg.slots) * m_outStride),
             "cudaMalloc(out)");
-
-      //check(cudaMalloc(&m_slotGate, cfg.slots * sizeof(unsigned)), "cudaMalloc(slotGate)");
 
       m_slotStart.resize(cfg.slots, nullptr);
       m_slotStop.resize(cfg.slots, nullptr);
@@ -152,49 +148,6 @@ namespace DrpAlgos {
         cudaGraphDestroy(graph);
         check(err, "cudaGraphInstantiate (worker)");
       }
-
-      //check(cudaStreamCreateWithFlags(&m_stream, cudaStreamNonBlocking), "cudaStreamCreate");
-      //check(cudaEventCreate(&m_start), "cudaEventCreate");
-      //check(cudaEventCreate(&m_stop), "cudaEventCreate");
-      //check(cudaMalloc(&m_in, std::size_t { cfg.slots } * cfg.inElems * sizeof(float)),
-      //      "cudaMalloc(in)");
-      //check(cudaMalloc(&m_outBase, kHeader + std::size_t { cfg.slots } * m_outStride),
-      //      "cudaMalloc(out)");
-      //check(cudaMalloc(&m_gate, sizeof(unsigned)), "cudaMalloc(gate)");
-      //check(cudaMalloc(&m_slot, sizeof(unsigned)), "cudaMalloc(slot)");
-      //check(cudaMallocHost(&m_one, sizeof(unsigned)), "cudaMallocHost(one)");
-
-      //*m_one = 1;
-      //check(cudaMemset(m_gate, 0, sizeof(unsigned)), "memset(gate)");
-      //check(cudaMemset(m_slot, 0, sizeof(unsigned)), "memset(slot)");
-
-      //const DrpKernelCtx ctx {
-      //  m_gate,
-      //  m_slot,
-      //  m_in,
-      //  cfg.inElems,
-      //  m_outBase + kHeader,
-      //  m_outStride,
-      //  nullptr
-      //};
-
-      // Record once, exactly as the DRP's recordGraph does
-      //cudaGraph_t graph { nullptr };
-      //check(cudaStreamBeginCapture(m_stream, cudaStreamCaptureModeThreadLocal),
-      //      "BeginCapture");
-      //try {
-      //  recordWithHandshake(*m_desc, ctx, m_stream);
-      //} catch (...) {
-      //  cudaStreamEndCapture(m_stream, &graph);
-      //  if (graph) {
-      //    cudaGraphDestroy(graph);
-      //  }
-      //  throw;
-      //}
-      //check(cudaStreamEndCapture(m_stream, &graph), "EndCapture");
-      //const cudaError_t err { cudaGraphInstantiate(&m_graphExec, graph, 0) };
-      //cudaGraphDestroy(graph);
-      //check(err, "cudaGraphInstantiate");
     } catch (...) {
       release();
       throw;
@@ -252,59 +205,21 @@ namespace DrpAlgos {
       }
       evts->clear();
     }
-    /*
-    if (m_stream) {
-      cudaStreamSynchronize(m_stream);
-    }
-
-    if (m_graphExec) {
-      cudaGraphExecDestroy(m_graphExec);
-    }
-    if (m_start) {
-      cudaEventDestroy(m_start);
-    }
-    if (m_stop) {
-      cudaEventDestroy(m_stop);
-    }
-    if (m_in) {
-      cudaFree(m_in);
-    }
-    if (m_outBase) {
-      cudaFree(m_outBase);
-    }
-    if (m_gate) {
-      cudaFree(m_gate);
-    }
-    if (m_slot) {
-      cudaFree(m_slot);
-    }
-    if (m_one) {
-      cudaFreeHost(m_one);
-    }
-    if (m_stream) {
-      cudaStreamDestroy(m_stream);
-    }
-
-    m_graphExec = nullptr;
-    m_start = m_stop = nullptr;
-    m_in = nullptr;
-    m_outBase = nullptr;
-    m_gate = m_slot = m_one = nullptr;
-    m_stream = nullptr;
-    */
   }
 
-  EventResult AlgorithmHost::process(const float* frame) {
-    const unsigned slot { m_next++ % m_cfg.slots };
-    Worker& worker { m_workers[static_cast<std::size_t>(m_next) % m_workers.size()] };
+  void AlgorithmHost::submit(std::size_t event, const float* devFrame) {
+    const unsigned slot { static_cast<unsigned>(event % m_cfg.slots) };
+    Worker& worker { m_workers[event % m_workers.size()] };
 
-    float* const in { m_in + static_cast<std::size_t>(slot) * m_cfg.inElems };
-    check(cudaMemcpyAsync(in,
-                          frame,
-                          m_cfg.inElems * sizeof(float),
-                          cudaMemcpyHostToDevice,
-                          worker.stream),
-          "copy frame");
+    if (devFrame) {
+      float* const in { m_in + static_cast<std::size_t>(slot) * m_cfg.inElems };
+      check(cudaMemcpyAsync(in,
+                            devFrame,
+                            m_cfg.inElems * sizeof(float),
+                            cudaMemcpyHostToDevice,
+                            worker.stream),
+            "copy frame (worker)");
+    }
 
     armWorker<<<1, 1, 0, worker.stream>>>(worker.gate,
                                           worker.slot,
@@ -312,80 +227,67 @@ namespace DrpAlgos {
                                           m_outBase,
                                           m_outStride);
 
-    //if (m_cfg.maxDelayUs > 0.0f) {
-    //  std::uniform_real_distribution<float> dist { 0.0f, m_cfg.maxDelayUs };
-    //  delayStream<<<1, 1, 0, worker.stream>>>(static_cast<unsigned long long>(dist(m_rng) * 1000.0f));
-    //}
+    check(cudaEventRecord(m_slotStart[slot], worker.stream), "eventRecord (worker)");
+    check(cudaGraphLaunch(worker.graphExec, worker.stream), "cudaGraphLaunch (worker)");
+    check(cudaEventRecord(m_slotStop[slot], worker.stream), "eventRecord (worker)");
+    check(cudaStreamSynchronize(worker.stream), "sync (worker)");
+  }
 
-    check(cudaEventRecord(m_slotStart[slot], worker.stream), "eventRecord");
-    check(cudaGraphLaunch(worker.graphExec, worker.stream), "cudaGraphLaunch");
-    check(cudaEventRecord(m_slotStop[slot], worker.stream), "eventRecord");
-    check(cudaStreamSynchronize(worker.stream), "sync");
-    //captureGate<<<1, 1, 0, worker.stream>>>(worker.gate, m_slotGate, slot);
-    //check(cudaEventRecord(m_slotDone[slot], worker.stream), "eventRecord");
-    check(cudaGetLastError(), "submit");
+  EventResult AlgorithmHost::collect(std::size_t event) {
+    const unsigned slot { static_cast<unsigned>(event % m_cfg.slots) };
+    Worker& worker { m_workers[event % m_workers.size()] };
 
     EventResult result;
     check(cudaEventElapsedTime(&result.deviceMs, m_slotStart[slot], m_slotStop[slot]),
           "eventElapsedTime (worker)");
 
-    return result;
-    /*
-    const unsigned slot { m_next++ % m_cfg.slots };
-    const unsigned long long noSize { 0 };
-    float* const in { m_in + std::size_t { slot } * m_cfg.inElems };
-    // header precedes slot data
-    unsigned char* const hdr { m_outBase + std::size_t { slot } * m_outStride };
-
-    check(cudaMemcpyAsync(in,
-                          frame,
-                          m_cfg.inElems * sizeof(float),
-                          cudaMemcpyHostToDevice,
-                          m_stream),
-          "copy frame");
-    check(cudaMemcpyAsync(m_slot, &slot, sizeof(slot), cudaMemcpyHostToDevice, m_stream),
-          "set slot");
-    check(cudaMemcpyAsync(hdr,
-                          &noSize,
-                          sizeof(noSize),
-                          cudaMemcpyHostToDevice,
-                          m_stream),
-          "clear size");
-    check(cudaMemcpyAsync(m_gate,
-                          m_one,
-                          sizeof(unsigned),
-                          cudaMemcpyHostToDevice,
-                          m_stream),
-          "arm gate");
-
-    check(cudaEventRecord(m_start, m_stream), "eventRecord");
-    check(cudaGraphLaunch(m_graphExec, m_stream), "cudaGraphLaunch");
-    check(cudaEventRecord(m_stop, m_stream), "eventRecord");
-    check(cudaStreamSynchronize(m_stream), "sync");
-
     unsigned gateAfter { 0 };
     unsigned long long size { 0 };
-    check(cudaMemcpy(&gateAfter, m_gate, sizeof(gateAfter), cudaMemcpyDeviceToHost),
-          "read gate");
-    check(cudaMemcpy(&size, hdr, sizeof(size), cudaMemcpyDeviceToHost), "read size");
+    unsigned char* const hdr { m_outBase + static_cast<std::size_t>(slot) * m_outStride };
+    check(cudaMemcpy(&gateAfter, worker.gate, sizeof(gateAfter), cudaMemcpyDeviceToHost),
+          "read gate (worker)");
+    check(cudaMemcpy(&size, hdr, sizeof(size), cudaMemcpyDeviceToHost),
+          "read size (worker)");
 
     if (gateAfter != 2) {
-      throw std::runtime_error("Handshake not completed (gate = " +
-                               std::to_string(gateAfter) + ")");
+      throw std::runtime_error("Handshake not completed (gate = " + std::to_string(gateAfter) + ")");
     }
     if (size > m_outStride - kHeader) {
-      throw std::runtime_error("Size header (" + std::to_string(size) + " B) exceeds slot ("
-                               + std::to_string(m_outStride - kHeader) + " B)");
+      throw std::runtime_error("Size header (" + std::to_string(size) + " B) exceeds slot (" +
+                               std::to_string(m_outStride - kHeader) + " B)");
     }
 
-    EventResult result;
+    check(cudaGetLastError(), "submit");
+
     result.payload.resize(size);
     check(cudaMemcpy(result.payload.data(), hdr + kHeader, size, cudaMemcpyDeviceToHost),
-          "read payload");
-    check(cudaEventElapsedTime(&result.deviceMs, m_start, m_stop), "eventElapsedTime");
+          "read payload (worker)");
 
     return result;
-    */
+  }
+
+  EventResult AlgorithmHost::process(const float* frame) {
+    static bool initialized { false };
+    if (!initialized) {
+      if (m_frame) {
+        cudaFree(m_frame);
+        m_frame = nullptr;
+      }
+
+      check(cudaMalloc(&m_frame, m_cfg.inElems * sizeof(float)),
+            "cudaMalloc (create devFrame)");
+      initialized = true;
+    }
+    check(cudaMemcpyAsync(m_frame,
+                          frame,
+                          m_cfg.inElems * sizeof(float),
+                          cudaMemcpyHostToDevice),
+          "cudaMemcpy (move frame to device)");
+
+    std::size_t event { static_cast<std::size_t>(m_next++) };
+    submit(event, m_frame);
+
+    return collect(event);
   }
 
   BenchResult AlgorithmHost::benchmark(std::size_t iterations) {
@@ -402,43 +304,5 @@ namespace DrpAlgos {
     }
 
     return bench;
-    /*
-    check(cudaMemsetAsync(m_slot, 0, sizeof(unsigned), m_stream), "set slot");
-
-    // Warm-up
-    check(cudaMemcpyAsync(m_gate,
-                          m_one,
-                          sizeof(unsigned),
-                          cudaMemcpyHostToDevice,
-                          m_stream),
-          "arm gate");
-    check(cudaGraphLaunch(m_graphExec, m_stream), "cudaGraphLaunch");
-    check(cudaStreamSynchronize(m_stream), "sync");
-
-    float total { 0.0f };
-    bench.minUs = 1e30f;
-    for (std::size_t i = 0; i < iterations; ++i) {
-      check(cudaMemcpyAsync(m_gate,
-                            m_one,
-                            sizeof(unsigned),
-                            cudaMemcpyHostToDevice,
-                            m_stream),
-            "arm gate");
-      check(cudaEventRecord(m_start, m_stream), "eventRecord");
-      check(cudaGraphLaunch(m_graphExec, m_stream), "cudaGraphLaunch");
-      check(cudaEventRecord(m_stop, m_stream), "eventRecord");
-      check(cudaEventSynchronize(m_stop), "eventSync");
-
-      float ms { 0.0f };
-      check(cudaEventElapsedTime(&ms, m_start, m_stop), "eventElapsedTime");
-      const float us { ms * 1000.0f };
-      total += us;
-      bench.minUs = std::min(bench.minUs, us);
-      bench.maxUs = std::max(bench.maxUs, us);
-    }
-    bench.meanUs = total / static_cast<float>(iterations);
-
-    return bench;
-    */
   }
 } // namespace DrpAlgos

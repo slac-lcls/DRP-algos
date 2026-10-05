@@ -100,6 +100,9 @@ namespace DrpAlgos {
   private:
     void release() noexcept;
 
+    void submit(std::size_t event, const float* devFrame);
+    EventResult collect(std::size_t event);
+
     struct Worker {
       std::shared_ptr<IKernelDescriptor> desc;
       cudaStream_t stream { nullptr };
@@ -109,24 +112,17 @@ namespace DrpAlgos {
     };
 
     HostConfig m_cfg;
-    //std::shared_ptr<IKernelDescriptor> m_desc;
     std::vector<Worker> m_workers;
     std::size_t m_payloadSize { 0 };
     unsigned long long m_outStride { 0 };
     unsigned m_next { 0 };
 
-    //cudaStream_t m_stream { nullptr };
-    //cudaGraphExec_t m_graphExec { nullptr };
-    //cudaEvent_t m_start { nullptr };
-    //cudaEvent_t m_stop { nullptr };
     std::vector<cudaEvent_t> m_slotStart;
     std::vector<cudaEvent_t> m_slotStop;
 
     float* m_in { nullptr };              ///< Input ring (slots * inElems floats)
     unsigned char* m_outBase { nullptr }; ///< Output ring incl. leading header space
-    //unsigned* m_gate { nullptr };         ///< Handshake word (device)
-    //unsigned* m_slot { nullptr };         ///< Current slot index (device)
-    //unsigned* m_one { nullptr };          ///< Pinned host word holding 1, for re-arming
+    float* m_frame { nullptr };
   };
 } // namespace DrpAlgos
 
