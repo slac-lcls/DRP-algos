@@ -103,12 +103,17 @@ namespace DrpAlgos {
       check(cudaMemset(m_in, 0, inBytes), "cudaMemset(in)");
       check(cudaMalloc(&m_outBase, kHeader + static_cast<std::size_t>(cfg.slots) * m_outStride),
             "cudaMalloc(out)");
+      check(cudaMalloc(&m_slotGate, cfg.slots * sizeof(unsigned)),
+            "cudaMalloc(slotGate)");
 
       m_slotStart.resize(cfg.slots, nullptr);
       m_slotStop.resize(cfg.slots, nullptr);
+      m_slotDone.resize(cfg.slots, nullptr);
       for (unsigned slot = 0; slot < cfg.slots; ++slot) {
         check(cudaEventCreate(&m_slotStart[slot]), "cudaEventCreate(slotStart)");
         check(cudaEventCreate(&m_slotStop[slot]), "cudaEventCreate(slotStop)");
+        check(cudaEventCreateWithFlags(&m_slotDone[slot], cudaEventDisableTiming),
+              "cudaEventCreate (slotDone)");
       }
 
       for (Worker& worker : m_workers) {
@@ -194,10 +199,20 @@ namespace DrpAlgos {
       cudaFree(m_outBase);
     }
 
+    if (m_slotGate) {
+      cudaFree(m_slotGate);
+    }
+
+    if (m_frame) {
+      cudaFree(m_frame);
+    }
+
     m_in = nullptr;
     m_outBase = nullptr;
+    m_slotGate = nullptr;
+    m_frame = nullptr;
 
-    for (std::vector<cudaEvent_t>* evts : { &m_slotStart, &m_slotStop }) {
+    for (std::vector<cudaEvent_t>* evts : { &m_slotStart, &m_slotStop, &m_slotDone }) {
       for (cudaEvent_t& evt : *evts) {
         if (evt) {
           cudaEventDestroy(evt);
@@ -230,11 +245,22 @@ namespace DrpAlgos {
     check(cudaEventRecord(m_slotStart[slot], worker.stream), "eventRecord (worker)");
     check(cudaGraphLaunch(worker.graphExec, worker.stream), "cudaGraphLaunch (worker)");
     check(cudaEventRecord(m_slotStop[slot], worker.stream), "eventRecord (worker)");
-    check(cudaStreamSynchronize(worker.stream), "sync (worker)");
+
+    check(cudaMemcpyAsync(&m_slotGate[slot],
+                          worker.gate,
+                          sizeof(unsigned),
+                          cudaMemcpyDeviceToDevice,
+                          worker.stream),
+          "cudaMemcpy (worker gate to AlgHost)");
+
+    check(cudaEventRecord(m_slotDone[slot], worker.stream), "eventRecord");
+    check(cudaGetLastError(), "submit");
   }
 
   EventResult AlgorithmHost::collect(std::size_t event) {
     const unsigned slot { static_cast<unsigned>(event % m_cfg.slots) };
+    check(cudaEventSynchronize(m_slotDone[slot]), "eventSync");
+
     Worker& worker { m_workers[event % m_workers.size()] };
 
     EventResult result;
@@ -244,7 +270,7 @@ namespace DrpAlgos {
     unsigned gateAfter { 0 };
     unsigned long long size { 0 };
     unsigned char* const hdr { m_outBase + static_cast<std::size_t>(slot) * m_outStride };
-    check(cudaMemcpy(&gateAfter, worker.gate, sizeof(gateAfter), cudaMemcpyDeviceToHost),
+    check(cudaMemcpy(&gateAfter, &m_slotGate[slot], sizeof(gateAfter), cudaMemcpyDeviceToHost),
           "read gate (worker)");
     check(cudaMemcpy(&size, hdr, sizeof(size), cudaMemcpyDeviceToHost),
           "read size (worker)");

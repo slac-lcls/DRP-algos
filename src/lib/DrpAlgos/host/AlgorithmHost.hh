@@ -115,14 +115,16 @@ namespace DrpAlgos {
     std::vector<Worker> m_workers;
     std::size_t m_payloadSize { 0 };
     unsigned long long m_outStride { 0 };
-    unsigned m_next { 0 };
+    unsigned m_next { 0 };                ///< Event index (for slot and worker selection)
 
-    std::vector<cudaEvent_t> m_slotStart;
-    std::vector<cudaEvent_t> m_slotStop;
+    std::vector<cudaEvent_t> m_slotStart; ///< Per-slot event before graph launch
+    std::vector<cudaEvent_t> m_slotStop;  ///< Per-slot event after graph launch
+    std::vector<cudaEvent_t> m_slotDone;  ///< Per-slot event slot completed (gate moved to AlgHost)
 
     float* m_in { nullptr };              ///< Input ring (slots * inElems floats)
     unsigned char* m_outBase { nullptr }; ///< Output ring incl. leading header space
-    float* m_frame { nullptr };
+    unsigned* m_slotGate { nullptr };     ///< AlgHost's copy of slot's gate captured after each event
+    float* m_frame { nullptr };           ///< Device copy of the input data
   };
 } // namespace DrpAlgos
 
