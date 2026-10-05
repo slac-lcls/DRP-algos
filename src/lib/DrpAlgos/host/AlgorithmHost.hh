@@ -21,6 +21,9 @@ namespace DrpAlgos {
   struct HostConfig {
     unsigned slots { 4 };             ///< Ring depth (as with DRP worker buffers)
     unsigned long long inElems { 0 }; ///< Floats per input slot (one calibrated frame)
+    unsigned workers { 1 };
+    float maxDelayUs { 0.0f };
+    unsigned seed { 42 };
   };
 
   /**
@@ -39,6 +42,7 @@ namespace DrpAlgos {
     float meanUs { 0.0f };        ///< Mean graph execution time in microseconds
     float minUs { 0.0f };         ///< Minimum graph execution time in microseconds
     float maxUs { 0.0f };         ///< Maximum graph execution time in microseconds
+    float rateKHz { 0.0f };
   };
 
   /**
@@ -68,7 +72,10 @@ namespace DrpAlgos {
 
     std::size_t payloadSize() const { return m_payloadSize; }
 
-    bool variableSize() const { return m_desc->variableSize(); }
+    //bool variableSize() const { return m_desc->variableSize(); }
+    bool variableSize() const { return m_workers.front().desc->variableSize(); }
+
+    unsigned workers() const { return static_cast<unsigned>(m_workers.size()); }
 
     /**
      * Process a single event analogously to the DRP.
@@ -93,22 +100,33 @@ namespace DrpAlgos {
   private:
     void release() noexcept;
 
+    struct Worker {
+      std::shared_ptr<IKernelDescriptor> desc;
+      cudaStream_t stream { nullptr };
+      cudaGraphExec_t graphExec { nullptr };
+      unsigned* gate { nullptr };            ///< Handshake word (device)
+      unsigned* slot { nullptr };            ///< Current slot index (device)
+    };
+
     HostConfig m_cfg;
-    std::shared_ptr<IKernelDescriptor> m_desc;
+    //std::shared_ptr<IKernelDescriptor> m_desc;
+    std::vector<Worker> m_workers;
     std::size_t m_payloadSize { 0 };
     unsigned long long m_outStride { 0 };
     unsigned m_next { 0 };
 
-    cudaStream_t m_stream { nullptr };
-    cudaGraphExec_t m_graphExec { nullptr };
-    cudaEvent_t m_start { nullptr };
-    cudaEvent_t m_stop { nullptr };
+    //cudaStream_t m_stream { nullptr };
+    //cudaGraphExec_t m_graphExec { nullptr };
+    //cudaEvent_t m_start { nullptr };
+    //cudaEvent_t m_stop { nullptr };
+    std::vector<cudaEvent_t> m_slotStart;
+    std::vector<cudaEvent_t> m_slotStop;
 
     float* m_in { nullptr };              ///< Input ring (slots * inElems floats)
     unsigned char* m_outBase { nullptr }; ///< Output ring incl. leading header space
-    unsigned* m_gate { nullptr };         ///< Handshake word (device)
-    unsigned* m_slot { nullptr };         ///< Current slot index (device)
-    unsigned* m_one { nullptr };          ///< Pinned host word holding 1, for re-arming
+    //unsigned* m_gate { nullptr };         ///< Handshake word (device)
+    //unsigned* m_slot { nullptr };         ///< Current slot index (device)
+    //unsigned* m_one { nullptr };          ///< Pinned host word holding 1, for re-arming
   };
 } // namespace DrpAlgos
 

@@ -55,7 +55,7 @@ namespace {
 drp-algos-run --alg <alg_name> --version <version> [--soname libDrpAlgos.so]
               --params <params.json>
               --frame-shape <frame shape>
-              [--events N] [--slots K] [--bench N]
+              [--events N] [--workers W] [--slots K] [--bench N]
 
 
 Run a DRP algorithm standalone, with the DRP's execution model. Algorithms must be those
@@ -137,15 +137,17 @@ int main(int argc, char** argv) {
     DrpAlgos::HostConfig cfg;
     cfg.slots = static_cast<unsigned>(std::stoul(opt(args, "slots", "4")));
     cfg.inElems = frameElems;
+    cfg.workers = static_cast<unsigned>(std::stoul(opt(args, "workers", "1")));
 
     DrpAlgos::AlgorithmHost host(alg, version, soname, params, cfg);
-    std::printf("%s %s: payload %zu B%s, frame %zu elems, %zu events\n",
+    std::printf("%s %s: payload %zu B%s, frame %zu elems, %zu events, %u workers\n",
                 alg.c_str(),
                 version.toString().c_str(),
                 host.payloadSize(),
                 host.variableSize() ? " (variable)" : "",
                 frameElems,
-                nEvents);
+                nEvents,
+                host.workers());
 
     // Run events through the ring
     std::vector<DrpAlgos::EventResult> results;
