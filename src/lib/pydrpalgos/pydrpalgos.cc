@@ -28,7 +28,10 @@ PYBIND11_MODULE(_drpalgos, drpalgos_module, py::mod_gil_not_used()) {
     .def(py::init<>())
     .def(py::init<unsigned, unsigned>())
     .def_readwrite("slots", &DrpAlgos::HostConfig::slots)
-    .def_readwrite("inElems", &DrpAlgos::HostConfig::inElems);
+    .def_readwrite("inElems", &DrpAlgos::HostConfig::inElems)
+    .def_readwrite("workers", &DrpAlgos::HostConfig::workers)
+    .def_readwrite("maxDelayUs", &DrpAlgos::HostConfig::maxDelayUs)
+    .def_readwrite("seed", &DrpAlgos::HostConfig::seed);
 
   py::classh<DrpAlgos::EventResult>(drpalgos_module, "EventResult")
     .def_property_readonly("payload",
@@ -44,7 +47,8 @@ PYBIND11_MODULE(_drpalgos, drpalgos_module, py::mod_gil_not_used()) {
     .def_readwrite("iterations", &DrpAlgos::BenchResult::iterations)
     .def_readwrite("meanUs", &DrpAlgos::BenchResult::meanUs)
     .def_readwrite("minUs", &DrpAlgos::BenchResult::minUs)
-    .def_readwrite("maxUs", &DrpAlgos::BenchResult::maxUs);
+    .def_readwrite("maxUs", &DrpAlgos::BenchResult::maxUs)
+    .def_readwrite("rateKHz", &DrpAlgos::BenchResult::rateKHz);
 
 
   py::classh<DrpAlgos::AlgorithmHost>(drpalgos_module, "AlgorithmHost")
