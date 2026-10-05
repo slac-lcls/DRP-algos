@@ -55,7 +55,7 @@ namespace {
 drp-algos-run --alg <alg_name> --version <version> [--soname libDrpAlgos.so]
               --params <params.json>
               --frame-shape <frame shape>
-              [--events N] [--workers W] [--slots K] [--bench N]
+              [--events N] [--workers W] [--slots K] [--bench N] [--max-delay-us D]
 
 
 Run a DRP algorithm standalone, with the DRP's execution model. Algorithms must be those
@@ -64,6 +64,12 @@ the algorithm version, and a parameter JSON document matching the types of param
 would provide if running in the DAQ. A frame shape must be provided in comma-delimited form
 which will be used to construct random input frames. Slots can be configured to emulate the
 number of DRP worker buffers (default 4).
+Inlcuding `--workers W` with W greater than 1 adds a round-robin distribution of the graph
+launches of the algorihtm between multiple instances of the "DRP Reducer". This simulates
+the actual multi-instance behaviour in the DRP.
+  - Optionally, a delay can be added, with a maximum set by `--max-delay-us` which pertubrs
+    the streams of multiple workers, which can lead to out-of-order completion (but not launch).
+    The delay is disabled if left at 0.
 )help"};
 
     std::printf("%s", help_msg.c_str());
@@ -138,6 +144,7 @@ int main(int argc, char** argv) {
     cfg.slots = static_cast<unsigned>(std::stoul(opt(args, "slots", "4")));
     cfg.inElems = frameElems;
     cfg.workers = static_cast<unsigned>(std::stoul(opt(args, "workers", "1")));
+    cfg.maxDelayUs = std::stof(opt(args, "max-delay-us", "0"));
 
     DrpAlgos::AlgorithmHost host(alg, version, soname, params, cfg);
     std::printf("%s %s: payload %zu B%s, frame %zu elems, %zu events, %u workers\n",
@@ -165,12 +172,12 @@ int main(int argc, char** argv) {
     const std::string b { opt(args, "bench", "") };
     if (!b.empty()) {
       const auto bench { host.benchmark(std::stoull(b)) };
-      std::printf("bench (%zu iters): mean %.2f us, min %.2f us, max %.2f us  -> %.1f kHz\n",
+      std::printf("bench (%zu iters): mean %.2f us, min %.2f us, max %.2f us  -> rate %.1f kHz\n",
                   bench.iterations,
                   bench.meanUs,
                   bench.minUs,
                   bench.maxUs,
-                  bench.meanUs > 0 ? 1000.0 / bench.meanUs : 0.0);
+                  bench.rateKHz);
     }
 
     return 0;

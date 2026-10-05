@@ -5,8 +5,11 @@
 #include "DrpAlgos/drp/KernelRegistry.hh"
 
 #include <algorithm>
+#include <cstddef>
+#include <random>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
   constexpr unsigned long long kHeader { sizeof(unsigned long long) }; ///< Size header per slot
@@ -67,6 +70,26 @@ namespace {
     *reinterpret_cast<unsigned long long*>(outBase + slot * outStride) = 0; // Clear size header
     *gate = 1;
   }
+
+  /**
+   * Delay a stream for `ns` nanonseconds.
+   *
+   * Can use to simulate worker completing events out of order by perturbing the
+   * duration.
+   *
+   * @param[in] ns The nanoseconds to delay the stream execution by.
+   */
+  __global__ void delayStream(unsigned long long const ns) {
+    unsigned long long t0;
+    asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t0));
+    unsigned long long t { t0 };
+
+    while (t - t0 < ns) {
+      __nanosleep(1000);
+      asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t));
+    }
+  }
+
 } // anonymous namespace
 
 namespace DrpAlgos {
@@ -76,6 +99,7 @@ namespace DrpAlgos {
                                const nlohmann::json& params,
                                HostConfig cfg)
     : m_cfg { cfg }
+    , m_rng { cfg.seed }
   {
     if (cfg.slots == 0 || cfg.inElems == 0 || cfg.workers == 0) {
       throw std::invalid_argument("AlgorithmHost: slots, inElems, and workers must be > 0");
@@ -242,6 +266,13 @@ namespace DrpAlgos {
                                           m_outBase,
                                           m_outStride);
 
+    // Add perturbation (optionally) to simulate out-of-order completeion
+    if (m_cfg.maxDelayUs > 0.0f) {
+      std::uniform_real_distribution<float> dist { 0.0f, m_cfg.maxDelayUs };
+      // Stream delay is in nanoseconds, so convert
+      delayStream<<<1, 1, 0, worker.stream>>>(static_cast<unsigned long long>(dist(m_rng) * 1000.0f));
+    }
+
     check(cudaEventRecord(m_slotStart[slot], worker.stream), "eventRecord (worker)");
     check(cudaGraphLaunch(worker.graphExec, worker.stream), "cudaGraphLaunch (worker)");
     check(cudaEventRecord(m_slotStop[slot], worker.stream), "eventRecord (worker)");
@@ -330,6 +361,7 @@ namespace DrpAlgos {
 
     bench.minUs = 1e30f;
     double totalUs { 0.0 };
+    const auto t0 { std::chrono::steady_clock::now() };
     for (std::size_t event = 0; event < iterations; ++event) {
       submit(event, m_frame);
       auto res = collect(event);
@@ -339,8 +371,12 @@ namespace DrpAlgos {
       bench.minUs = std::min(bench.minUs, iterUs);
       bench.maxUs = std::max(bench.maxUs, iterUs);
     }
+    const auto t1 { std::chrono::steady_clock::now() };
 
     bench.meanUs = static_cast<float>(totalUs / static_cast<double>(iterations));
+
+    const double wallUs { std::chrono::duration<double, std::micro>(t1 - t0).count() };
+    bench.rateKHz = static_cast<float>(1000.0 * static_cast<double>(iterations) / wallUs);
 
     return bench;
   }

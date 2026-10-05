@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -21,9 +22,9 @@ namespace DrpAlgos {
   struct HostConfig {
     unsigned slots { 4 };             ///< Ring depth (as with DRP worker buffers)
     unsigned long long inElems { 0 }; ///< Floats per input slot (one calibrated frame)
-    unsigned workers { 1 };
-    float maxDelayUs { 0.0f };
-    unsigned seed { 42 };
+    unsigned workers { 1 };           ///< Number of workers for mulitpile Reducer instances
+    float maxDelayUs { 0.0f };        ///< Max delay on an event - to force out of order worker completion
+    unsigned seed { 42 };             ///< Seed for delay generator
   };
 
   /**
@@ -42,7 +43,7 @@ namespace DrpAlgos {
     float meanUs { 0.0f };        ///< Mean graph execution time in microseconds
     float minUs { 0.0f };         ///< Minimum graph execution time in microseconds
     float maxUs { 0.0f };         ///< Maximum graph execution time in microseconds
-    float rateKHz { 0.0f };
+    float rateKHz { 0.0f };       ///< Sustained rate across workers (as seen host-side)
   };
 
   /**
@@ -116,6 +117,7 @@ namespace DrpAlgos {
     std::size_t m_payloadSize { 0 };
     unsigned long long m_outStride { 0 };
     unsigned m_next { 0 };                ///< Event index (for slot and worker selection)
+    std::mt19937 m_rng;
 
     std::vector<cudaEvent_t> m_slotStart; ///< Per-slot event before graph launch
     std::vector<cudaEvent_t> m_slotStop;  ///< Per-slot event after graph launch
