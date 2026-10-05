@@ -297,11 +297,24 @@ namespace DrpAlgos {
       return bench;
     }
 
-    for (Worker& worker : m_workers) {
-      check(cudaGraphLaunch(worker.graphExec, worker.stream),
-            "cudaGraphLaunch (worker)");
-      check(cudaStreamSynchronize(worker.stream), "sync (worker)");
+    for (std::size_t warmup = 0; warmup < m_workers.size(); ++warmup) {
+      submit(warmup, m_frame);
+      (void)collect(warmup);
     }
+
+    bench.minUs = 1e30f;
+    double totalUs { 0.0 };
+    for (std::size_t event = 0; event < iterations; ++event) {
+      submit(event, m_frame);
+      auto res = collect(event);
+
+      const float iterUs { res.deviceMs * 1000.0f };
+      totalUs += iterUs;
+      bench.minUs = std::min(bench.minUs, iterUs);
+      bench.maxUs = std::max(bench.maxUs, iterUs);
+    }
+
+    bench.meanUs = static_cast<float>(totalUs / static_cast<double>(iterations));
 
     return bench;
   }
