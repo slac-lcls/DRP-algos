@@ -73,8 +73,7 @@ namespace DrpAlgos {
 
     std::size_t payloadSize() const { return m_payloadSize; }
 
-    //bool variableSize() const { return m_desc->variableSize(); }
-    bool variableSize() const { return m_workers.front().desc->variableSize(); }
+    bool variableSize() const { return m_desc->variableSize(); }
 
     unsigned workers() const { return static_cast<unsigned>(m_workers.size()); }
 
@@ -105,7 +104,6 @@ namespace DrpAlgos {
     EventResult collect(std::size_t event);
 
     struct Worker {
-      std::shared_ptr<IKernelDescriptor> desc;
       cudaStream_t stream { nullptr };
       cudaGraphExec_t graphExec { nullptr };
       unsigned* gate { nullptr };            ///< Handshake word (device)
@@ -114,6 +112,7 @@ namespace DrpAlgos {
 
     HostConfig m_cfg;
     std::vector<Worker> m_workers;
+    std::shared_ptr<IKernelDescriptor> m_desc;
     std::size_t m_payloadSize { 0 };
     unsigned long long m_outStride { 0 };
     unsigned m_next { 0 };                ///< Event index (for slot and worker selection)

@@ -405,10 +405,35 @@ namespace {
    * The groups are organized by key, which is currently set as a JSON string of the
    * CONFIGURE parameters. In principle, you can have 1 group per unique key.
    */
+  struct FrameBinStorage {
+    DeviceUnique<FrameBinCounters> counters; ///< Owned counters tracking buffers reduced across instances
+    DeviceUnique<unsigned[]> index;          ///< Index of the DRP slot where each staged frame is
+    DeviceUnique<float[]> staging;           ///< Buffer for staging the reduced time binned data.
+    FrameBinState state {};                  ///< Non-owning state view
+
+    FrameBinStorage(unsigned frames, unsigned outElems)
+      : counters(deviceAlloc<FrameBinCounters>(1, "[ROIBin 0.1.0] cudaMalloc(counters)"))
+      , index(deviceAlloc<unsigned[]>(static_cast<std::size_t>(kBinSlots) * frames,
+                                      "[ROIBin 0.1.0] cudaMalloc(index)"))
+      , staging(deviceAlloc<float[]>(static_cast<std::size_t>(kBinSlots) * frames * outElems,
+                                     "[ROIBin 0.1.0] cudaMalloc(staging)"))
+    {
+      FrameBinCounters init {};
+      for (unsigned i = 0; i < kBinSlots; ++i) {
+        init.owner[i] = i;
+      }
+
+      check(cudaMemcpy(counters.get(), &init, sizeof(init), cudaMemcpyHostToDevice),
+            "[ROIBin 0.1.0] memcpy(counters)");
+
+      state = { counters.get(), index.get(), staging.get() };
+    }
+  };
+  /*
   struct FrameBinGroup {
-    std::string key;        ///< Group identifier - used with JSON string of parameters
-    unsigned members { 0 }; ///< Number of group members (equal to number of Reducer workers)
-    bool sealed { false };  ///< Whether group is closed to new members (graph has launched)
+    //std::string key;        ///< Group identifier - used with JSON string of parameters
+    //unsigned members { 0 }; ///< Number of group members (equal to number of Reducer workers)
+    //bool sealed { false };  ///< Whether group is closed to new members (graph has launched)
 
     DeviceUnique<FrameBinCounters> counters; ///< Owned counters tracking buffers reduced across instances
     DeviceUnique<unsigned[]> index;          ///< Index of the DRP slot where each staged frame is
@@ -434,9 +459,10 @@ namespace {
       state = { counters.get(), index.get(), staging.get() };
     }
   };
+  */
 
-  std::mutex g_frameBinMutex;
-  std::weak_ptr<FrameBinGroup> g_openFrameBinGroup;
+  //std::mutex g_frameBinMutex;
+  //std::weak_ptr<FrameBinGroup> g_openFrameBinGroup;
 
   class ROIBinV0_1_0 final : public DrpAlgos::TypedKernelDescriptor<ROIBinParams> {
   public:
@@ -446,7 +472,20 @@ namespace {
 
     bool variableSize() const override { return m_params.frames > 1; }
 
+    void setWorkers(unsigned nWorkers) override {
+      if (nWorkers == 0 || nWorkers > kMaxWorkers) {
+        throw std::invalid_argument("[ROIBin 0.1.0] Unsupported number of Reducer workers.");
+      }
+
+      m_nWorkers = nWorkers;
+    }
+
     void launch(DrpKernelCtx ctx, cudaStream_t stream) override {
+      if (m_nextWorker >= m_nWorkers) {
+        throw std::runtime_error("[ROIBin 0.1.0] More launches than Reducer workers.");
+      }
+      const unsigned worker { m_nextWorker++ };
+
       constexpr unsigned threads { 256 };
       const unsigned blocks { (outElems() + threads - 1) / threads };
       const DrpKernelCtx pctx { withParams(ctx) };
@@ -457,14 +496,27 @@ namespace {
         return;
       }
 
-      const WorkerBinConsts fl { m_worker, sealGroup(), m_params.frames, outElems() };
-      const FrameBinState& state { m_group->state };
+      //const WorkerBinConsts fl { m_worker, sealGroup(), m_params.frames, outElems() };
+      //const FrameBinState& state { m_group->state };
+      const WorkerBinConsts worker_consts {
+        worker,
+        m_nWorkers,
+        m_params.frames,
+        outElems()
+      };
+      const FrameBinState& state { m_storage->state };
 
-      frameBinBegin<<<1, 1, 0, stream>>>(pctx, state, fl);
-      frameBinStage<<<blocks, threads, 0, stream>>>(pctx, state, fl);
-      frameBinSync<<<1, 1, 0, stream>>>(pctx, state, fl);
-      frameBinEmit<<<blocks, threads, 0, stream>>>(pctx, state, fl);
-      frameBinEnd<<<1, 1, 0, stream>>>(pctx, state, fl, payloadSize());
+      frameBinBegin<<<1, 1, 0, stream>>>(pctx, state, worker_consts);
+      frameBinStage<<<blocks, threads, 0, stream>>>(pctx, state, worker_consts);
+      frameBinSync<<<1, 1, 0, stream>>>(pctx, state, worker_consts);
+      frameBinEmit<<<blocks, threads, 0, stream>>>(pctx, state, worker_consts);
+      frameBinEnd<<<1, 1, 0, stream>>>(pctx, state, worker_consts, payloadSize());
+
+      //frameBinBegin<<<1, 1, 0, stream>>>(pctx, state, fl);
+      //frameBinStage<<<blocks, threads, 0, stream>>>(pctx, state, fl);
+      //frameBinSync<<<1, 1, 0, stream>>>(pctx, state, fl);
+      //frameBinEmit<<<blocks, threads, 0, stream>>>(pctx, state, fl);
+      //frameBinEnd<<<1, 1, 0, stream>>>(pctx, state, fl, payloadSize());
 
       check(cudaGetLastError(), "[ROIBin 0.1.0] launch(frame bin)");
     }
@@ -506,10 +558,19 @@ namespace {
         throw std::invalid_argument("[ROIBin 0.1.0] Frames must be >= 1 (for time binning)");
       }
 
+      /*
       if (m_params.frames > 1) {
         joinGroup();
       } else {
         m_group.reset();
+      }
+      */
+
+      m_nextWorker = 0;
+      if (m_params.frames > 1) {
+        m_storage = std::make_unique<FrameBinStorage>(m_params.frames, outElems());
+      } else {
+        m_storage.reset();
       }
     }
 
@@ -528,6 +589,7 @@ namespace {
      * (DRP architecture). The configuration occurs in a direct synchronous
      * loop, so the order is equal to the worker index.
      */
+    /*
     void joinGroup() {
       const std::string key { nlohmann::json(m_params).dump() };
       std::lock_guard<std::mutex> lock { g_frameBinMutex };
@@ -545,6 +607,7 @@ namespace {
       m_worker = group->members++;
       m_group = group;
     }
+    */
 
     /**
      * Close off the group to new instances.
@@ -554,15 +617,21 @@ namespace {
      *
      * @returns The group size (worker count).
      */
+    /*
     unsigned sealGroup() {
       std::lock_guard<std::mutex> lock { g_frameBinMutex };
       m_group->sealed = true;
 
       return m_group->members;
     }
+    */
 
-    std::shared_ptr<FrameBinGroup> m_group;
-    unsigned m_worker { 0 };
+    std::unique_ptr<FrameBinStorage> m_storage; ///< Time-binning state (shared by all Reducer workers)
+    unsigned m_nWorkers { 1 };                  ///< The number of Reducer workers (as set by the DRP)
+    unsigned m_nextWorker { 0 };                ///< The next worker recorded by `launch`
+
+    //std::shared_ptr<FrameBinGroup> m_group;
+    //unsigned m_worker { 0 };
   };
 
   REGISTER_KERNEL("ROIBin", 0, 1, 0, ROIBinV0_1_0)

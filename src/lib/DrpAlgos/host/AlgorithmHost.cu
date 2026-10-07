@@ -109,11 +109,10 @@ namespace DrpAlgos {
     }
 
     m_workers.resize(cfg.workers);
-    for (Worker& worker : m_workers) {
-      worker.desc = KernelRegistry::instance().create(name, version, soname);
-      worker.desc->configure(params);
-    }
-    m_payloadSize = m_workers.front().desc->payloadSize();
+    m_desc = KernelRegistry::instance().create(name, version, soname);
+    m_desc->setWorkers(cfg.workers);
+    m_desc->configure(params);
+    m_payloadSize = m_desc->payloadSize();
 
     // Each slot's size header sits in the tail padding of the previous slot,
     // so the stride must leave room for it
@@ -163,7 +162,7 @@ namespace DrpAlgos {
         check(cudaStreamBeginCapture(worker.stream, cudaStreamCaptureModeThreadLocal),
               "BeginCapture (worker)");
         try {
-          recordWithHandshake(*worker.desc, ctx, worker.stream);
+          recordWithHandshake(*m_desc, ctx, worker.stream);
         } catch (...) {
           cudaStreamEndCapture(worker.stream, &graph);
           if (graph) {
