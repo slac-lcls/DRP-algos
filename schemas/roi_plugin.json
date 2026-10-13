@@ -1,0 +1,9 @@
+{
+    "plugin_type": "roi",
+    "module": "psdaq.control_gui.drp_alg_plugins.roi",
+    "entry_point": "RoiPlugin",
+    "label": "Region of Interest",
+    "adapter": "drpalgos.adapters.roibin:RoiBinV010",
+    "label": "ROI",
+    "max_rois": 8
+}

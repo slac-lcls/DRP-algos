@@ -1,10 +1,12 @@
 {
-    "in_shape": [6, 168, 192],
+    "in_shape": [1, 336, 576],
     "roi_start": [0, 0, 0],
-    "roi_shape": [6, 168, 192],
-    "bin": [2, 2, 2],
+    "roi_shape": [1, 336, 576],
+    "bin": [1, 2, 2],
     "frames": 4,
     "use_threshold": 0,
     "threshold": 0.0,
-    "scale": 1.0
+    "scale": 1.0,
+    "asic_grid": [2, 3],
+    "asic_layout": [0, 0, 1, 1, 0, 1, 2, 0, 1, 3, 1, 0, 4, 1, 0, 5, 1, 0]
 }

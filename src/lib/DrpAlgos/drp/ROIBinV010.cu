@@ -16,29 +16,66 @@
 #include <string>
 
 namespace {
+  using DrpAlgos::algorithms::AsicPlacement;
+
+  constexpr unsigned kMaxAsics { 16 }; ///< Maximum ASICs in one panel's ASIC grid
+
   /**
    * Parameters for ROIBin algorithm.
+   *
+   * Shapes and offsets are in panel coordinates (plane, row, col). The calibrated
+   * input is ASIC-major; `asic_grid` and `asic_layout` describe how the panel is
+   * tiled by ASICs (see `panel_to_buffer`). An ROI with any zero extent is empty:
+   * only the header is output, so time bins stay in step with other panels.
    */
   struct ROIBinParams {
-    std::uint32_t in_shape[3];   ///< (asic, y_len, x_len) of the calibrated input
-    std::uint32_t roi_start[3];  ///< ROI origin per dimension
-    std::uint32_t roi_shape[3];  ///< ROI extent per dimension
-    std::uint32_t bin[3];        ///< Spatial bin factor per dimension
-    std::uint32_t frames;        ///< Consecutive reduced events summed per output (1 = off)
-    std::uint32_t use_threshold; ///< Non-zero: pixels below `threshold` are zeroed before binning
-    float threshold;             ///< Per-pixel threshold
-    float scale;                 ///< Multiplier applied to each spatial bin
+    std::uint32_t in_shape[3];             ///< (planes, rows, cols) of the input panel
+    std::uint32_t roi_start[3];            ///< ROI origin per dimension
+    std::uint32_t roi_shape[3];            ///< ROI extent per dimension (any 0 = empty)
+    std::uint32_t bin[3];                  ///< Spatial bin factor per dimension
+    std::uint32_t frames;                  ///< Consecutive reduced events summed per output (1 = off)
+    std::uint32_t use_threshold;           ///< Non-zero: pixels below `threshold` are zeroed before binning
+    float threshold;                       ///< Per-pixel threshold
+    float scale;                           ///< Multiplier applied to each spatial bin
+    std::uint32_t asic_grid[2];            ///< (rows, cols) of ASICs tiling the panel
+    AsicPlacement asic_layout[kMaxAsics];  ///< Placement per grid position, row-major
   };
 
-  NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(ROIBinParams,
-                                     in_shape,
-                                     roi_start,
-                                     roi_shape,
-                                     bin,
-                                     frames,
-                                     use_threshold,
-                                     threshold,
-                                     scale)
+  /**
+   * Parse ROIBin parameters.
+   *
+   * `asic_layout` is a flat list of (asic, flip_rows, flip_cols) triples, one per
+   * ASIC grid position (row-major), so its length is 3 * asic_grid[0] * asic_grid[1].
+   */
+  void from_json(const nlohmann::json& j, ROIBinParams& p) {
+    j.at("in_shape").get_to(p.in_shape);
+    j.at("roi_start").get_to(p.roi_start);
+    j.at("roi_shape").get_to(p.roi_shape);
+    j.at("bin").get_to(p.bin);
+    j.at("frames").get_to(p.frames);
+    j.at("use_threshold").get_to(p.use_threshold);
+    j.at("threshold").get_to(p.threshold);
+    j.at("scale").get_to(p.scale);
+    j.at("asic_grid").get_to(p.asic_grid);
+
+    const std::uint64_t n_asics { std::uint64_t { p.asic_grid[0] } * p.asic_grid[1] };
+    if (n_asics == 0 || n_asics > kMaxAsics) {
+      throw std::invalid_argument("[ROIBin 0.1.0] asic_grid must hold 1 to 16 ASICs");
+    }
+
+    const nlohmann::json& layout { j.at("asic_layout") };
+    if (!layout.is_array() || layout.size() != 3 * n_asics) {
+      throw std::invalid_argument("[ROIBin 0.1.0] asic_layout must hold one "
+                                  "(asic, flip_rows, flip_cols) triple per ASIC");
+    }
+    for (std::size_t i = 0; i < n_asics; ++i) {
+      p.asic_layout[i] = AsicPlacement {
+        layout.at(3 * i).get<unsigned>(),
+        layout.at(3 * i + 1).get<unsigned>() != 0,
+        layout.at(3 * i + 2).get<unsigned>() != 0
+      };
+    }
+  }
 
   /**
    * A small header added to the reduced output for to facilitate bin tracking.
@@ -192,6 +229,10 @@ namespace {
                                  out,
                                  params.in_shape[1],
                                  params.in_shape[2],
+                                 params.in_shape[1] / params.asic_grid[0],
+                                 params.in_shape[2] / params.asic_grid[1],
+                                 params.asic_grid[1],
+                                 params.asic_layout,
                                  params.roi_start[0],
                                  params.roi_start[1],
                                  params.roi_start[2],
@@ -487,7 +528,8 @@ namespace {
       const unsigned worker { m_nextWorker++ };
 
       constexpr unsigned threads { 256 };
-      const unsigned blocks { (outElems() + threads - 1) / threads };
+      // Need at least 1 block - empty ROI is allowed to write a header and advance time bins
+      const unsigned blocks { std::max(1u, (outElems() + threads - 1) / threads) };
       const DrpKernelCtx pctx { withParams(ctx) };
 
       if (m_params.frames == 1) {
@@ -496,8 +538,6 @@ namespace {
         return;
       }
 
-      //const WorkerBinConsts fl { m_worker, sealGroup(), m_params.frames, outElems() };
-      //const FrameBinState& state { m_group->state };
       const WorkerBinConsts worker_consts {
         worker,
         m_nWorkers,
@@ -512,12 +552,6 @@ namespace {
       frameBinEmit<<<blocks, threads, 0, stream>>>(pctx, state, worker_consts);
       frameBinEnd<<<1, 1, 0, stream>>>(pctx, state, worker_consts, payloadSize());
 
-      //frameBinBegin<<<1, 1, 0, stream>>>(pctx, state, fl);
-      //frameBinStage<<<blocks, threads, 0, stream>>>(pctx, state, fl);
-      //frameBinSync<<<1, 1, 0, stream>>>(pctx, state, fl);
-      //frameBinEmit<<<blocks, threads, 0, stream>>>(pctx, state, fl);
-      //frameBinEnd<<<1, 1, 0, stream>>>(pctx, state, fl, payloadSize());
-
       check(cudaGetLastError(), "[ROIBin 0.1.0] launch(frame bin)");
     }
 
@@ -527,9 +561,9 @@ namespace {
       unsigned long long num_elem_out { 1 };
       for (int dim = 0; dim < 3; ++dim) {
         // Validate all dimensions
-        if (m_params.bin[dim] == 0 || m_params.roi_shape[dim] == 0) {
-          throw std::invalid_argument("[ROIBin 0.1.0] bin and roi_shape must be "
-                                      "non-zero");
+        if (m_params.bin[dim] == 0) {
+          // Allow a zero roi_shape for an empty ROI
+          throw std::invalid_argument("[ROIBin 0.1.0] bin must be non-zero");
         }
 
         if (static_cast<std::uint64_t>(m_params.roi_start[dim]) + m_params.roi_shape[dim] > m_params.in_shape[dim]) {
@@ -556,6 +590,25 @@ namespace {
       }
       if (m_params.frames == 0) {
         throw std::invalid_argument("[ROIBin 0.1.0] Frames must be >= 1 (for time binning)");
+      }
+
+      // Require that in_shape rows and columns can split evenly across the ASIC grid
+      // and an ASIC index is used exactly once, for panel tiling
+      if (m_params.in_shape[1] % m_params.asic_grid[0] != 0 ||
+          m_params.in_shape[2] % m_params.asic_grid[1] != 0) {
+        throw std::invalid_argument("[ROIBin 0.1.0] in_shape rows/cols must divide evenly "
+                                    "into asic_grid");
+      }
+
+      const unsigned n_asics { m_params.asic_grid[0] * m_params.asic_grid[1] };
+      bool seen[kMaxAsics] {};
+      for (unsigned i = 0; i < n_asics; ++i) {
+        const unsigned asic { m_params.asic_layout[i].asic };
+        if (asic >= n_asics || seen[asic]) {
+          throw std::invalid_argument("[ROIBin 0.1.0] asic_layout must use each ASIC "
+                                      "index in [0, n_asics) exactly once");
+        }
+        seen[asic] = true;
       }
 
       /*
