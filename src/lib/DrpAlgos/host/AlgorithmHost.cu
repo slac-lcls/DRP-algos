@@ -254,7 +254,7 @@ namespace DrpAlgos {
       check(cudaMemcpyAsync(in,
                             devFrame,
                             m_cfg.inElems * sizeof(float),
-                            cudaMemcpyHostToDevice,
+                            cudaMemcpyDeviceToDevice,
                             worker.stream),
             "copy frame (worker)");
     }
