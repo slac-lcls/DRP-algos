@@ -43,7 +43,7 @@ This command will run version `v0.2.0` (the JIT compiled one) using the paramete
 
 After running the basic examples you can use these tools to work on new algorithms. Have a look at `src/lib/DrpAlgos/drp/BinningV0.cu` (AOT) and `src/lib/DrpAlgos/drp/BinningV020.cc` (JIT) source files for starting points.
 
-When working locally, you can simply rebuild the project with your new source code files and algorithms integrated into the libraries. If you have used the `REGISTER_ALGORITHM` macro found in these two example source code files, you will then be able to use `drp-algos-run` to test their performance.
+When working locally, you can simply rebuild the project with your new source code files and algorithms integrated into the libraries. If you have used the `REGISTER_KERNEL` macro found in these two example source code files, you will then be able to use `drp-algos-run` to test their performance.
 
 ## Testing with Python Bindings
 

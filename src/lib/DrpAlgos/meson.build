@@ -61,14 +61,19 @@ binning_v020_cc = custom_target(
     ],
 )
 
+plugin_symbol_map = meson.current_source_dir() / 'drpalgos_plugin.map'
+
 DrpAlgos_lib = shared_library('DrpAlgos',
   [
       'drp/BinningV0.cu',
       'drp/BinningV020.cc',
+      'drp/ROIBinV010.cu',
   ] + binning_v020_cc,
   include_directories: [drp_algos_include],
   install: true,
   install_rpath: lib_install_rpath,
+  link_args: ['-Wl,--version-script=' + plugin_symbol_map],
+  link_depends: plugin_symbol_map,
   cuda_args: drp_algos_cuda_args,
   dependencies: deps_for_drp_algos + DrpAlgosCore_dep + DrpAlgosJit_dep,
   gnu_symbol_visibility: 'inlineshidden',

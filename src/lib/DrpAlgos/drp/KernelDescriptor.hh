@@ -27,6 +27,21 @@ namespace DrpAlgos {
     virtual ~IKernelDescriptor() = default;
 
     /**
+     * Number of DRP Reducer workers/instances that will run the algorithm descriptor.
+     *
+     * The DRP records one graph per worker, using a *single* descriptor. `launch` is
+     * called once per worker in worker order. Events are dispatched between the worker
+     * instances in round-robin order.
+     *
+     * @note Any algorithms that need to track state *across* events will need this
+     *       worker count to allow ordering of events. It is otherwise safe to ignore
+     *       and does not need to overloaded.
+     *
+     * @param[in] nWorkers The number of DRP Reducer workers/instances.
+     */
+    virtual void setWorkers(unsigned nWorkers) {}
+
+    /**
      * Run algorithm configuration with provided parameter sets.
      *
      * @param[in] params The parameter set to use for the algorithm.

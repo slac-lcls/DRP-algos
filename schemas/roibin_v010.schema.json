@@ -1,0 +1,18 @@
+{
+    "name": "ROIBin",
+    "version": "v0.1.0",
+    "soname": "libDrpAlgos.so",
+    "parameters": {
+        "in_shape":      { "type": "array", "items": { "type": "UINT32", "rank": 1 } },
+        "roi_start":     { "type": "array", "items": { "type": "UINT32", "rank": 1 } },
+        "roi_shape":     { "type": "array", "items": { "type": "UINT32", "rank": 1 } },
+        "bin":           { "type": "array", "items": { "type": "UINT32", "rank": 1 } },
+        "frames":        { "type": "UINT32" },
+        "use_threshold": { "type": "UINT32" },
+        "threshold":     { "type": "FLOAT" },
+        "scale":         { "type": "FLOAT" },
+        "asic_grid":     { "type": "array", "items": { "type": "UINT32", "rank": 1 } },
+        "asic_layout":   { "type": "array", "items": { "type": "UINT32", "rank": 1 } }
+    },
+    "required": ["in_shape", "roi_start", "roi_shape", "bin", "frames", "use_threshold", "threshold", "scale", "asic_grid", "asic_layout"]
+}
