@@ -470,40 +470,6 @@ namespace {
       state = { counters.get(), index.get(), staging.get() };
     }
   };
-  /*
-  struct FrameBinGroup {
-    //std::string key;        ///< Group identifier - used with JSON string of parameters
-    //unsigned members { 0 }; ///< Number of group members (equal to number of Reducer workers)
-    //bool sealed { false };  ///< Whether group is closed to new members (graph has launched)
-
-    DeviceUnique<FrameBinCounters> counters; ///< Owned counters tracking buffers reduced across instances
-    DeviceUnique<unsigned[]> index;          ///< Index of the DRP slot where each staged frame is
-    DeviceUnique<float[]> staging;           ///< Buffer for staging the reduced time binned data.
-    FrameBinState state {};                  ///< Non-owning state view
-
-    FrameBinGroup(std::string key_, unsigned frames, unsigned outElems)
-      : key(std::move(key_))
-      , counters(deviceAlloc<FrameBinCounters>(1, "[ROIBin 0.1.0] cudaMalloc(counters)"))
-      , index(deviceAlloc<unsigned[]>(static_cast<std::size_t>(kBinSlots) * frames,
-                                      "[ROIBin 0.1.0] cudaMalloc(index)"))
-      , staging(deviceAlloc<float[]>(static_cast<std::size_t>(kBinSlots) * frames * outElems,
-                                     "[ROIBin 0.1.0] cudaMalloc(staging)"))
-    {
-      FrameBinCounters init {};
-      for (unsigned i = 0; i < kBinSlots; ++i) {
-        init.owner[i] = i;
-      }
-
-      check(cudaMemcpy(counters.get(), &init, sizeof(init), cudaMemcpyHostToDevice),
-            "[ROIBin 0.1.0] memcpy(counters)");
-
-      state = { counters.get(), index.get(), staging.get() };
-    }
-  };
-  */
-
-  //std::mutex g_frameBinMutex;
-  //std::weak_ptr<FrameBinGroup> g_openFrameBinGroup;
 
   class ROIBinV0_1_0 final : public DrpAlgos::TypedKernelDescriptor<ROIBinParams> {
   public:
@@ -611,14 +577,6 @@ namespace {
         seen[asic] = true;
       }
 
-      /*
-      if (m_params.frames > 1) {
-        joinGroup();
-      } else {
-        m_group.reset();
-      }
-      */
-
       m_nextWorker = 0;
       if (m_params.frames > 1) {
         m_storage = std::make_unique<FrameBinStorage>(m_params.frames, outElems());
@@ -635,56 +593,9 @@ namespace {
         (m_params.roi_shape[2] / m_params.bin[2]);
     }
 
-    /**
-     * Join a group of Reducer instances working simultaneously.
-     *
-     * All Reducer instances are configured with identical parameters
-     * (DRP architecture). The configuration occurs in a direct synchronous
-     * loop, so the order is equal to the worker index.
-     */
-    /*
-    void joinGroup() {
-      const std::string key { nlohmann::json(m_params).dump() };
-      std::lock_guard<std::mutex> lock { g_frameBinMutex };
-
-      m_group.reset();
-      std::shared_ptr<FrameBinGroup> group { g_openFrameBinGroup.lock() };
-      if (!group || group->sealed || group->key != key) {
-        group = std::make_shared<FrameBinGroup>(key, m_params.frames, outElems());
-        g_openFrameBinGroup = group;
-      }
-      if (group->members == kMaxWorkers) {
-        throw std::runtime_error("[ROIBin 0.1.0] Too many reducer workers");
-      }
-
-      m_worker = group->members++;
-      m_group = group;
-    }
-    */
-
-    /**
-     * Close off the group to new instances.
-     *
-     * Should be called on the first graph launch. The total size ofthe group
-     * will be the number of workers.
-     *
-     * @returns The group size (worker count).
-     */
-    /*
-    unsigned sealGroup() {
-      std::lock_guard<std::mutex> lock { g_frameBinMutex };
-      m_group->sealed = true;
-
-      return m_group->members;
-    }
-    */
-
     std::unique_ptr<FrameBinStorage> m_storage; ///< Time-binning state (shared by all Reducer workers)
     unsigned m_nWorkers { 1 };                  ///< The number of Reducer workers (as set by the DRP)
     unsigned m_nextWorker { 0 };                ///< The next worker recorded by `launch`
-
-    //std::shared_ptr<FrameBinGroup> m_group;
-    //unsigned m_worker { 0 };
   };
 
   REGISTER_KERNEL("ROIBin", 0, 1, 0, ROIBinV0_1_0)
