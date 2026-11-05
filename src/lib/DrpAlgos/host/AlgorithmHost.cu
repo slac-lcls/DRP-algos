@@ -1,8 +1,9 @@
 #include "DrpAlgos/host/AlgorithmHost.hh"
 
-#include "DrpAlgos/drp/KernelCtx.hh"
+#include "DrpAlgos/KernelCtx.hh"
 #include "DrpAlgos/drp/KernelDescriptor.hh"
 #include "DrpAlgos/drp/KernelRegistry.hh"
+#include "DrpAlgos/drp/Launch.hh"
 
 #include <algorithm>
 #include <cstddef>
@@ -44,9 +45,9 @@ namespace {
   }
 
   void recordWithHandshake(DrpAlgos::IKernelDescriptor& desc,
-                           DrpKernelCtx ctx,
+                           DrpAlgos::LatestCtx ctx,
                            cudaStream_t stream) {
-    desc.launch(ctx, stream);
+    launchAnyAbi(desc, ctx, stream);
 
     drpFinalize<<<1, 1, 0, stream>>>(const_cast<unsigned*>(ctx.gate),
                                      ctx.slot,
@@ -111,7 +112,8 @@ namespace DrpAlgos {
     m_workers.resize(cfg.workers);
     m_desc = KernelRegistry::instance().create(name, version, soname);
     m_desc->setWorkers(cfg.workers);
-    m_desc->configure(params);
+    auto paramsStr { params.dump() };
+    m_desc->configure(paramsStr.c_str(), paramsStr.size());
     m_payloadSize = m_desc->payloadSize();
 
     // Each slot's size header sits in the tail padding of the previous slot,
@@ -144,18 +146,30 @@ namespace DrpAlgos {
               "cudaStreamCreate(worker)");
         check(cudaMalloc(&worker.gate, sizeof(unsigned)), "cudaMalloc(worker gate)");
         check(cudaMalloc(&worker.slot, sizeof(unsigned)), "cudaMalloc(worker slot)");
+        check(cudaMalloc(&worker.retCode, sizeof(unsigned)),
+              "cudaMalloc(worker retCode)");
+        check(cudaMalloc(&worker.seq, sizeof(unsigned long long)),
+              "cudaMalloc(worker seq)");
 
         check(cudaMemset(worker.gate, 0, sizeof(unsigned)), "cudaMemset(worker gate)");
         check(cudaMemset(worker.slot, 0, sizeof(unsigned)), "cudaMemset(worker slot)");
+        check(cudaMemset(worker.retCode, 0, sizeof(unsigned)),
+              "cudaMemset(worker retCode)");
+        check(cudaMemset(worker.seq, 0, sizeof(unsigned long long)),
+              "cudaMemset(worker seq)");
 
-        const DrpKernelCtx ctx {
-          worker.gate,
-          worker.slot,
-          m_in,
-          cfg.inElems,
-          m_outBase + kHeader,
-          m_outStride,
-          nullptr
+        // ALWAYS use the latest ABI. Internally, the infrastructure will translate
+        // where needed for any remaining interfaces compiled against older ABI versions
+        const LatestCtx ctx {
+          .gate      = worker.gate,
+          .slot      = worker.slot,
+          .in        = m_in,
+          .inStride  = cfg.inElems,
+          .out       = m_outBase + kHeader,
+          .outStride = m_outStride,
+          .retCode   = worker.retCode,
+          .seq       = worker.seq,
+          .params    = nullptr
         };
 
         cudaGraph_t graph { nullptr };
@@ -204,6 +218,14 @@ namespace DrpAlgos {
         cudaFree(worker.slot);
       }
 
+      if (worker.retCode) {
+        cudaFree(worker.retCode);
+      }
+
+      if (worker.seq) {
+        cudaFree(worker.seq);
+      }
+
       if (worker.stream) {
         cudaStreamDestroy(worker.stream);
       }
@@ -211,6 +233,8 @@ namespace DrpAlgos {
       worker.graphExec = nullptr;
       worker.gate = nullptr;
       worker.slot = nullptr;
+      worker.retCode = nullptr;
+      worker.seq = nullptr;
       worker.stream = nullptr;
     }
 

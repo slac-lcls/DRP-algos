@@ -18,7 +18,8 @@ namespace {
   NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(BinningParams, in_shape, bin, scale)
 
   __global__ void binningKernel(DrpKernelCtx ctx) {
-    if (!drp_active(ctx)) {
+    const auto evt { drp_event(ctx) };
+    if (!evt.is_active) {
       return;
     }
 
@@ -27,8 +28,8 @@ namespace {
     const unsigned oy { params.in_shape[1] / params.bin[1] };
     const unsigned ox { params.in_shape[2] / params.bin[2] };
 
-    DrpAlgos::algorithms::binning(drp_in(ctx),
-                                  drp_out<float>(ctx),
+    DrpAlgos::algorithms::binning(evt.in,
+                                  evt.out_as<float>(),
                                   params.in_shape[1],
                                   params.in_shape[2],
                                   oy,
@@ -44,7 +45,7 @@ namespace {
   public:
     std::size_t payloadSize() const override { return outElems() * sizeof(float); }
 
-    void launch(DrpKernelCtx ctx, cudaStream_t stream) override {
+    void launchTyped(const DrpCtx& ctx, cudaStream_t stream) override {
       constexpr unsigned threads { 256 };
       const unsigned blocks { static_cast<unsigned>((outElems() + threads - 1) / threads) };
       binningKernel<<<blocks, threads, 0, stream>>>(withParams(ctx));

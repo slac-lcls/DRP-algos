@@ -16,7 +16,7 @@ namespace {
   // Parameters arrive as compile-time constants in namespace jit_params:
   //   in_shape(i), in_shape_size, bin(i), bin_size, scale
   constexpr const char* kBinningSource = R"cuda(
-#include "DrpAlgos/drp/KernelCtx.hh"
+#include "DrpAlgos/KernelCtx.hh"
 #include "DrpAlgos/algorithms/binning.cuh"
 
 using namespace jit_params;
@@ -31,12 +31,13 @@ constexpr unsigned OX { static_cast<unsigned>(in_shape(2) / bin(2)) };
 static_assert(1ULL * OA * OY * OX < 4294967296ULL, "output too large for 32-bit indexing");
 
 extern "C" __global__ void drp_kernel(DrpKernelCtx ctx) {
-  if (!drp_active(ctx)) {
+  const auto evt { drp_event(ctx) };
+  if (!evt.is_active) {
     return;
   }
 
-  DrpAlgos::algorithms::binning(drp_in(ctx),
-                                drp_out<float>(ctx),
+  DrpAlgos::algorithms::binning(evt.in,
+                                evt.out_as<float>(),
                                 static_cast<unsigned>(in_shape(1)),
                                 static_cast<unsigned>(in_shape(2)),
                                 OY,

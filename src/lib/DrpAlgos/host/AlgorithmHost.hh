@@ -108,6 +108,8 @@ namespace DrpAlgos {
       cudaGraphExec_t graphExec { nullptr };
       unsigned* gate { nullptr };            ///< Handshake word (device)
       unsigned* slot { nullptr };            ///< Current slot index (device)
+      unsigned* retCode { nullptr };         ///< Return code on each event (device)
+      unsigned long long* seq { nullptr };   ///< Event sequence (e.g. L1Accept counter) (device)
     };
 
     HostConfig m_cfg;

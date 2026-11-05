@@ -1,11 +1,12 @@
 # Install the headers for usage
 
 install_headers(
-    'KernelCtx.hh',
-    'KernelDescriptor.hh',
-    'TypedKernelDescriptor.hh',
-    'KernelRegistry.hh',
     'JITKernelDescriptor.hh',
+    'KernelDescriptor.hh',
+    'KernelRegistry.hh',
+    'Launch.hh',
+    'Metrics.hh',
+    'TypedKernelDescriptor.hh',
     'Version.hh',
     subdir: 'DrpAlgos/drp',
 )

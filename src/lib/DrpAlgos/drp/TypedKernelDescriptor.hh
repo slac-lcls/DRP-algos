@@ -1,7 +1,7 @@
 #ifndef DRP_ALGOS_DRP_TYPED_KERNEL_DESCRIPTOR_HH
 #define DRP_ALGOS_DRP_TYPED_KERNEL_DESCRIPTOR_HH
 
-#include "DrpAlgos/drp/KernelCtx.hh"
+#include "DrpAlgos/KernelCtx.hh"
 #include "DrpAlgos/drp/KernelDescriptor.hh"
 #include "DrpAlgos/export_macro.hh" // DRP_ALGOS_API for non-hidden symbols
 
@@ -24,12 +24,14 @@ namespace DrpAlgos {
    *
    * @tparam ParamT The type of the parameter struct used to configure the algorithm.
    */
-  template <typename ParamT>
+  template <typename ParamT, typename Ctx = DrpKernelCtx>
   class DRP_ALGOS_API TypedKernelDescriptor : public IKernelDescriptor {
     static_assert(std::is_trivially_copyable_v<ParamT>,
                   "ParamT is memcpy'd to the GPU: must be trivially copyable!");
 
   public:
+    using DrpCtx = Ctx;
+
     TypedKernelDescriptor() = default;
     TypedKernelDescriptor(const TypedKernelDescriptor&) = delete;
     TypedKernelDescriptor& operator=(const TypedKernelDescriptor&) = delete;
@@ -49,7 +51,11 @@ namespace DrpAlgos {
      *
      * @param[in] params The parameter set to use for the algorithm.
      */
-    void configure(const nlohmann::json& params) final {
+    void configure(const char* params, std::size_t paramsLen) final {
+      configureTyped(nlohmann::json::parse(params, params+paramsLen));
+    }
+
+    inline void configureTyped(const nlohmann::json& params) {
       // The parameter struct should have been registered with nlohmann JSON
       // where the algorithm was registered with the registry.
       m_params = params.get<ParamT>();
@@ -70,22 +76,30 @@ namespace DrpAlgos {
 
     ParamT& params() { return m_params; }
 
+    std::uint32_t ctxAbi() const override { return Ctx::abi; } // From header, via build args
+
+    inline void launch(const void* ctx, cudaStream_t stream) final {
+      launchTyped(*static_cast<const Ctx*>(ctx), stream);
+    }
+
   protected:
     virtual void onConfigure() {}
 
-    DrpKernelCtx withParams(DrpKernelCtx ctx) const {
+    Ctx withParams(Ctx ctx) const {
       ctx.params = m_devParams;
 
       return ctx;
     }
 
-    ParamT m_params {}; ///< Host-side parameters constructed by nlohmann/json
+    virtual void launchTyped(const Ctx& ctx, cudaStream_t stream) = 0;
 
     static void check(cudaError_t err, const char* what) {
       if (err != cudaSuccess) {
         throw std::runtime_error(std::string(what) + ": " + cudaGetErrorString(err));
       }
     }
+
+    ParamT m_params {}; ///< Host-side parameters constructed by nlohmann/json
 
   private:
     void* m_devParams { nullptr }; ///< Device-side parameters copy

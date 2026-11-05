@@ -23,18 +23,41 @@ DrpAlgosCore_dep = declare_dependency(
 # The JIT library requires KernelCtx.hh
 kernel_ctx_cc = custom_target(
     'KernelCtxHdr',
-    input: 'drp/KernelCtx.hh',
+    input: 'KernelCtx.hh',
     output: 'KernelCtxHeader.cc',
     command: [
         py3, jit_header_embed_script, '@INPUT@', '@OUTPUT@', 'kDrpKernelCtxHeaderSource'
     ],
 )
+## Include the specific ABI version implementations
+kernel_ctx_v0_cc = custom_target(
+    'KernelCtxV0Hdr',
+    input: 'abi/KernelCtx_v0.hh',
+    output: 'KernelCtxV0Header.cc',
+    command: [
+        py3, jit_header_embed_script, '@INPUT@', '@OUTPUT@', 'kDrpKernelCtxV0HeaderSource'
+    ],
+)
+kernel_ctx_v1_cc = custom_target(
+    'KernelCtxV1Hdr',
+    input: 'abi/KernelCtx_v1.hh',
+    output: 'KernelCtxV1Header.cc',
+    command: [
+        py3, jit_header_embed_script, '@INPUT@', '@OUTPUT@', 'kDrpKernelCtxV1HeaderSource'
+    ],
+)
+
+kernel_ctx_abi_impls = [
+    kernel_ctx_cc,
+    kernel_ctx_v0_cc,
+    kernel_ctx_v1_cc,
+]
 
 DrpAlgosJit_lib = shared_library(
     'DrpAlgosJit',
     [
         'drp/JITKernelDescriptor.cc',
-    ] + kernel_ctx_cc,
+    ] + kernel_ctx_abi_impls,
     include_directories: [drp_algos_include],
     install: true,
     install_rpath: lib_install_rpath,
@@ -111,6 +134,7 @@ DrpAlgosHost_dep = declare_dependency(
 )
 meson.override_dependency('DrpAlgosHost', DrpAlgosHost_dep)
 
+subdir('abi')
 subdir('algorithms')
 subdir('drp')
 subdir('host')
@@ -119,5 +143,6 @@ subdir('host')
 
 install_headers(
     'export_macro.hh',
+    'KernelCtx.hh',
     subdir: 'DrpAlgos',
 )

@@ -200,11 +200,11 @@ namespace {
    * This is an adjustment from the standard function provided by KernelCtx.hh
    * to simplify handling of the additional header that is included.
    *
-   * @param[in] ctx The DRP algorithm kernel context.
+   * @param[in] evt The input DRP event.
    * @returns The location to write reduced output to.
    */
-  __device__ inline float* outData(const DrpKernelCtx& ctx) {
-    return reinterpret_cast<float*>(drp_out<unsigned char>(ctx) + sizeof(ROIBinHeader));
+  __device__ inline float* outData(const DrpEvent& evt) {
+    return reinterpret_cast<float*>(evt.out + sizeof(ROIBinHeader));
   }
 
   /**
@@ -260,18 +260,19 @@ namespace {
    * @param[in] ctx The DRP algorithm kernel context.
    */
   __global__ void roibinDirect(DrpKernelCtx ctx) {
-    if (!drp_active(ctx)) {
+    const auto evt { drp_event(ctx) };
+    if (!evt.is_active) {
       return;
     }
 
     if (blockIdx.x == 0 && threadIdx.x == 0) {
-      ROIBinHeader* hdr { drp_out<ROIBinHeader>(ctx) };
+      ROIBinHeader* hdr { evt.out_as<ROIBinHeader>() };
       hdr->bin = kNoBin;
       hdr->frames = 1;
       hdr->flags = 0;
     }
 
-    roibinFrame(drp_params<ROIBinParams>(ctx), drp_in(ctx), outData(ctx));
+    roibinFrame(drp_params<ROIBinParams>(ctx), evt.in, outData(evt));
   }
 
   /**
@@ -286,7 +287,8 @@ namespace {
   __global__ void frameBinBegin(DrpKernelCtx ctx,
                                 FrameBinState state,
                                 WorkerBinConsts worker_consts) {
-    if (!drp_active(ctx)) {
+    const auto evt { drp_event(ctx) };
+    if (!evt.is_active) {
       return;
     }
 
@@ -315,7 +317,8 @@ namespace {
   __global__ void frameBinStage(DrpKernelCtx ctx,
                                 FrameBinState state,
                                 WorkerBinConsts worker_consts) {
-    if (!drp_active(ctx)) {
+    const auto evt { drp_event(ctx) };
+    if (!evt.is_active) {
       return;
     }
 
@@ -325,7 +328,7 @@ namespace {
       (static_cast<unsigned long long>(binSlot(s, worker_consts)) *
        worker_consts.frames + s % worker_consts.frames) * worker_consts.outElems
     };
-    roibinFrame(drp_params<ROIBinParams>(ctx), drp_in(ctx), dst);
+    roibinFrame(drp_params<ROIBinParams>(ctx), evt.in, dst);
   }
 
   /**
@@ -340,7 +343,8 @@ namespace {
   __global__ void frameBinSync(DrpKernelCtx ctx,
                                FrameBinState state,
                                WorkerBinConsts worker_consts) {
-    if (!drp_active(ctx)) {
+    const auto evt { drp_event(ctx) };
+    if (!evt.is_active) {
       return;
     }
 
@@ -371,7 +375,8 @@ namespace {
   __global__ void frameBinEmit(DrpKernelCtx ctx,
                                FrameBinState state,
                                WorkerBinConsts worker_consts) {
-    if (!drp_active(ctx)) {
+    const auto evt { drp_event(ctx) };
+    if (!evt.is_active) {
       return;
     }
 
@@ -385,7 +390,10 @@ namespace {
       static_cast<unsigned long long>(binSlot(seq, worker_consts)) * worker_consts.frames *
       worker_consts.outElems
     };
-    DrpAlgos::algorithms::sum_frames(src, outData(ctx), worker_consts.outElems, worker_consts.frames);
+    DrpAlgos::algorithms::sum_frames(src,
+                                     outData(evt),
+                                     worker_consts.outElems,
+                                     worker_consts.frames);
   }
 
   /**
@@ -402,7 +410,8 @@ namespace {
                               FrameBinState state,
                               WorkerBinConsts worker_consts,
                               unsigned long long outBytes) {
-    if (!drp_active(ctx)) {
+    const auto evt { drp_event(ctx) };
+    if (!evt.is_active) {
       return;
     }
 
@@ -420,7 +429,7 @@ namespace {
         }
       }
 
-      ROIBinHeader* hdr { drp_out<ROIBinHeader>(ctx) };
+      ROIBinHeader* hdr { evt.out_as<ROIBinHeader>() };
       hdr->bin = seq / worker_consts.frames;
       hdr->frames = worker_consts.frames;
       hdr->flags = (wraps > 1) ? kFlagOrderSuspect : 0u;
@@ -434,7 +443,9 @@ namespace {
     }
 
     state.counters->count[worker_consts.worker] += 1;
-    drp_set_size(ctx, emit ? outBytes : 0ULL);
+
+    // V1 has a DrpResult { size, status }; // status used as retCode
+    drp_commit(ctx, { emit ? outBytes : 0ULL, 0 });
   }
 
   /**
@@ -487,7 +498,7 @@ namespace {
       m_nWorkers = nWorkers;
     }
 
-    void launch(DrpKernelCtx ctx, cudaStream_t stream) override {
+    void launchTyped(const DrpCtx& ctx, cudaStream_t stream) override {
       if (m_nextWorker >= m_nWorkers) {
         throw std::runtime_error("[ROIBin 0.1.0] More launches than Reducer workers.");
       }
@@ -496,7 +507,7 @@ namespace {
       constexpr unsigned threads { 256 };
       // Need at least 1 block - empty ROI is allowed to write a header and advance time bins
       const unsigned blocks { std::max(1u, (outElems() + threads - 1) / threads) };
-      const DrpKernelCtx pctx { withParams(ctx) };
+      const DrpCtx pctx { withParams(ctx) };
 
       if (m_params.frames == 1) {
         roibinDirect<<<blocks, threads, 0, stream>>>(pctx);
