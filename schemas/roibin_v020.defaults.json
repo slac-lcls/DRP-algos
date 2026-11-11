@@ -1,0 +1,13 @@
+{
+    "in_shape": [1, 336, 576],
+    "num_rois": 2,
+    "roi_start": [[0, 0, 0], [0, 100, 100]],
+    "roi_shape": [[1, 100, 100], [1, 100, 100]],
+    "bin": [[1, 4, 4], [1, 4, 4]],
+    "frames": 4,
+    "use_threshold": [0, 0],
+    "threshold": [0.0, 0.0],
+    "scale": [1.0, 1.0],
+    "asic_grid": [1, 1],
+    "asic_layout": [0, 0, 0]
+}

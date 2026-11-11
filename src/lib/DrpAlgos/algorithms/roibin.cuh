@@ -153,6 +153,56 @@ namespace DrpAlgos::algorithms {
       out[i] = sum;
     }
   }
+
+  /**
+   * Sum a sequence of frames of num_elem elements each, potentially with gaps.
+   *
+   * This "time" binning routine sums frames from a contiguous block. Unlike with
+   * sum_frames, it can handle if some of the block contains gaps (due to missing
+   * data).
+   *
+   * @note The function runs with a grid-stride over the `num_elem` output.
+   * @note This function requires that the input and output be of the same datatype.
+   *       I.e., it will not handle conversion between float/double/integer etc.
+   *
+   * @note If the presence indicator is a nullptr, or there are more frames than
+   *       the bit-mask accounts for, all frames will be summed.
+   *
+   * @tparam DType The type of the input and output data.
+   * @param[in] frames The sequence of frames to sum.
+   * @param[out] out Where to write the reduced/summed frames.
+   * @param[in] num_elem The number of elements in each frame.
+   * @param[in] num_frames The number of frames to sum.
+   * @param[in] num_presence The number of 8-byte frame presence indicator bit-masks.
+   * @param[in] presence The bit-masks for indicating presence/absence of frames.
+   */
+  template <typename DType = float>
+  __device__ __forceinline__ void sum_present_frames(const DType* __restrict__ frames,
+                                                     DType* __restrict__ out,
+                                                     unsigned num_elem,
+                                                     unsigned num_frames,
+                                                     unsigned long long num_presence,
+                                                     const unsigned long long* presence) {
+    const unsigned idx { blockIdx.x * blockDim.x + threadIdx.x };
+    const unsigned stride { blockDim.x * gridDim.x };
+
+    for (unsigned i = idx; i < num_elem; i += stride) {
+      DType sum {};
+      for (unsigned f_idx = 0; f_idx < num_frames; ++f_idx) {
+        unsigned long long p_idx { f_idx / 64 }; // 8 byte bit-masks
+        if ((presence == nullptr)   ||
+            (p_idx >= num_presence) ||
+            ((presence[p_idx] >> (f_idx % 64)) & 1ULL)) {
+          unsigned long long f_offset {
+            static_cast<unsigned long long>(f_idx) * num_elem + i
+          };
+          sum += frames[f_offset];
+        }
+      }
+
+      out[i] = sum;
+    }
+  }
 } // namespace DrpAlgos::algorithms
 
 #endif // DRP_ALGOS_ALGORITHMS_ROIBIN_CUH
