@@ -35,8 +35,9 @@ namespace DrpAlgos::abi::v1 {
    *       needed on the core DRP infrastructure side.
    */
   struct DrpKernelCtx {
-    static constexpr unsigned abi { 1 };
+    static constexpr unsigned kABI { 1 };
 
+    unsigned abi;         ///< Filled on the host to check ABI mismatch on device-side
     const unsigned* gate; ///< If nullptr, always run. Otherwise run only when *gate == 1
     const unsigned* slot; ///< Ring slot index (read on device, NOT at graph capture)
     const CalibFP* in;    ///< Base of calibrated input ring
@@ -45,6 +46,7 @@ namespace DrpAlgos::abi::v1 {
     BigUint outStride;    ///< Bytes per output slot
     unsigned* retCode;    ///< Return/result code for the entire reduction
     const BigUint* seq;   ///< Event sequence number (e.g. L1Accept counter)
+    BigUint rawBytes;     ///< Number of raw (prescale) bytes ahead of reduced data
     const void* params;   ///< Device copy of the algorithm's parameter struct (AOT only)
   };
 
@@ -72,11 +74,21 @@ namespace DrpAlgos::abi::v1 {
 #if defined(__CUDACC__) || defined(__CUDACC_RTC__)
 
   __device__ inline DrpEvent drp_event(const DrpKernelCtx& ctx) {
+    if (ctx.abi != DrpKernelCtx::kABI) {
+      // Wrong ABI
+      return {
+        false,
+        0,
+        nullptr,
+        nullptr
+      };
+    }
+
     const bool is_active { (ctx.gate == nullptr) || (*ctx.gate == 1) };
     if (!is_active) {
       return {
         false,
-        0,
+        ctx.seq ? *ctx.seq : 0ULL,
         nullptr,
         nullptr
       };
@@ -87,7 +99,7 @@ namespace DrpAlgos::abi::v1 {
       true,
       ctx.seq ? *ctx.seq : 0ULL,
       ctx.in + slot * ctx.inStride,
-      ctx.out + slot * ctx.outStride
+      ctx.out + slot * ctx.outStride + ctx.rawBytes
     };
   }
 
@@ -110,6 +122,8 @@ namespace DrpAlgos::abi::v1 {
       return; // Inactive/blocked event
     }
 
+    // NOTE: The data pointer moves if rawBytes in non-zero. That's done in drp_event
+    //       Here, the size is always returned before the raw block.
     reinterpret_cast<BigUint*>(ctx.out + (*ctx.slot) * ctx.outStride)[-1] = result.size;
 
     if (ctx.retCode) {

@@ -18,13 +18,14 @@ namespace DrpAlgos {
    */
   inline abi::v0::DrpKernelCtx to_abi_v0(const LatestCtx& ctx) {
     return DrpAlgos::abi::v0::DrpKernelCtx {
-      ctx.gate,
-      ctx.slot,
-      ctx.in,
-      ctx.inStride,
-      ctx.out,
-      ctx.outStride,
-      ctx.params
+      .abi = abi::v0::DrpKernelCtx::kABI,
+      .gate = ctx.gate,
+      .slot = ctx.slot,
+      .in = ctx.in,
+      .inStride = ctx.inStride,
+      .out = ctx.out,
+      .outStride = ctx.outStride,
+      .params = ctx.params
     };
   }
 

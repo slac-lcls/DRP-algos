@@ -76,7 +76,7 @@ namespace DrpAlgos {
 
     ParamT& params() { return m_params; }
 
-    std::uint32_t ctxAbi() const override { return Ctx::abi; } // From header, via build args
+    std::uint32_t ctxAbi() const override { return Ctx::kABI; } // From header, via build args
 
     inline void launch(const void* ctx, cudaStream_t stream) final {
       launchTyped(*static_cast<const Ctx*>(ctx), stream);

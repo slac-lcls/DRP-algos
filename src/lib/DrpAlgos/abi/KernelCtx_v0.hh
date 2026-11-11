@@ -24,8 +24,9 @@ namespace DrpAlgos::abi::v0 {
    * via the context.
    */
   struct DrpKernelCtx {
-    static constexpr unsigned abi { 0 };
+    static constexpr unsigned kABI { 0 };
 
+    unsigned abi;                 ///< Filled on the host to check ABI mismatch on device-side
     const unsigned* gate;         ///< If nullptr, always run. Otherwise run only when *gate == 1
     const unsigned* slot;         ///< Ring slot index (read on device, NOT at graph capture)
     const float* in;              ///< Base of calibrated input ring
