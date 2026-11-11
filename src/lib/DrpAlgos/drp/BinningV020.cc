@@ -31,13 +31,12 @@ constexpr unsigned OX { static_cast<unsigned>(in_shape(2) / bin(2)) };
 static_assert(1ULL * OA * OY * OX < 4294967296ULL, "output too large for 32-bit indexing");
 
 extern "C" __global__ void drp_kernel(DrpKernelCtx ctx) {
-  const auto evt { drp_event(ctx) };
-  if (!evt.is_active) {
+  if (!drp_active(ctx)) {
     return;
   }
 
-  DrpAlgos::algorithms::binning(evt.in,
-                                evt.out_as<float>(),
+  DrpAlgos::algorithms::binning(drp_in(ctx),
+                                drp_out<float>(ctx),
                                 static_cast<unsigned>(in_shape(1)),
                                 static_cast<unsigned>(in_shape(2)),
                                 OY,

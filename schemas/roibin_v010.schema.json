@@ -1,7 +1,7 @@
 {
     "name": "ROIBin",
     "version": "v0.1.0",
-    "soname": "libDrpAlgos.so",
+    "soname": "libDrpAlgos.abiV0.so",
     "parameters": {
         "in_shape":      { "type": "array", "items": { "type": "UINT32", "rank": 1 } },
         "roi_start":     { "type": "array", "items": { "type": "UINT32", "rank": 1 } },

@@ -18,8 +18,7 @@ namespace {
   NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(BinningParams, in_shape, bin, scale)
 
   __global__ void binningKernel(DrpKernelCtx ctx) {
-    const auto evt { drp_event(ctx) };
-    if (!evt.is_active) {
+    if (!drp_active(ctx)) {
       return;
     }
 
@@ -28,8 +27,8 @@ namespace {
     const unsigned oy { params.in_shape[1] / params.bin[1] };
     const unsigned ox { params.in_shape[2] / params.bin[2] };
 
-    DrpAlgos::algorithms::binning(evt.in,
-                                  evt.out_as<float>(),
+    DrpAlgos::algorithms::binning(drp_in(ctx),
+                                  drp_out<float>(ctx),
                                   params.in_shape[1],
                                   params.in_shape[2],
                                   oy,
