@@ -64,10 +64,13 @@ namespace {
 
   __global__ void armWorker(unsigned* const gate,
                             unsigned* const slotWord,
+                            unsigned long long* const workerSeq,
                             unsigned const slot,
+                            unsigned long long const currentSeq,
                             unsigned char* const outBase,
                             unsigned long long const outStride) {
     *slotWord = slot;
+    *workerSeq = currentSeq;
     *reinterpret_cast<unsigned long long*>(outBase + slot * outStride) = 0; // Clear size header
     *gate = 1;
   }
@@ -155,12 +158,11 @@ namespace DrpAlgos {
         check(cudaMemset(worker.slot, 0, sizeof(unsigned)), "cudaMemset(worker slot)");
         check(cudaMemset(worker.retCode, 0, sizeof(unsigned)),
               "cudaMemset(worker retCode)");
-        check(cudaMemset(worker.seq, 0, sizeof(unsigned long long)),
-              "cudaMemset(worker seq)");
 
         // ALWAYS use the latest ABI. Internally, the infrastructure will translate
         // where needed for any remaining interfaces compiled against older ABI versions
         const LatestCtx ctx {
+          .abi       = LatestCtx::kABI,
           .gate      = worker.gate,
           .slot      = worker.slot,
           .in        = m_in,
@@ -169,6 +171,7 @@ namespace DrpAlgos {
           .outStride = m_outStride,
           .retCode   = worker.retCode,
           .seq       = worker.seq,
+          .rawBytes  = 0,
           .params    = nullptr
         };
 
@@ -285,7 +288,9 @@ namespace DrpAlgos {
 
     armWorker<<<1, 1, 0, worker.stream>>>(worker.gate,
                                           worker.slot,
+                                          worker.seq,
                                           slot,
+                                          static_cast<unsigned long long>(event),
                                           m_outBase,
                                           m_outStride);
 
@@ -377,15 +382,17 @@ namespace DrpAlgos {
       return bench;
     }
 
-    for (std::size_t warmup = 0; warmup < m_workers.size(); ++warmup) {
-      submit(warmup, m_frame);
-      (void)collect(warmup);
+    for (std::size_t warmup_iter = 0; warmup_iter < m_workers.size(); ++warmup_iter) {
+      std::size_t warmup_evt { static_cast<std::size_t>(m_next++) };
+      submit(warmup_evt, m_frame);
+      (void)collect(warmup_evt);
     }
 
     bench.minUs = 1e30f;
     double totalUs { 0.0 };
     const auto t0 { std::chrono::steady_clock::now() };
-    for (std::size_t event = 0; event < iterations; ++event) {
+    for (std::size_t iter = 0; iter < iterations; ++iter) {
+      std::size_t event { static_cast<std::size_t>(m_next++) };
       submit(event, m_frame);
       auto res = collect(event);
 
