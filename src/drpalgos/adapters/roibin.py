@@ -33,9 +33,11 @@ format this will no longer be needed.
 
 Classes:
     RoiBinV010: Adapter for ROIBin 0.1.0.
+
+    RoiBinV020: Adapter for ROIBin 0.2.0.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Tuple
 
 from drpalgos.adapters import ParamAdapter
 from drpalgos.geometry import (
@@ -84,7 +86,13 @@ class RoiBinV010(ParamAdapter):
     plugin = "roi"
     """The plugin MUST match any `intent_type` variable in a GUI plugin"""
 
-    produces = ("in_shape", "roi_start", "roi_shape", "asic_grid", "asic_layout")
+    produces: ClassVar[Tuple[str, ...]] = (
+        "in_shape",
+        "roi_start",
+        "roi_shape",
+        "asic_grid",
+        "asic_layout",
+    )
     detector_scope = ("frames", "bin", "threshold", "use_threshold", "scale")
     """Exposed parameters."""
 
@@ -201,8 +209,12 @@ class RoiBinV010(ParamAdapter):
         if errors:
             raise ValueError("; ".join(errors))
 
-        bin_rc: Tuple[int, int] = _parse_bin(shared)  # type: ignore[assignment]
-        rois: List[Rect] = [_parse_roi(r) for r in intent.get("rois", [])]  # type: ignore[misc]
+        bin_rc: Optional[Tuple[int, int]] = _parse_bin(shared)
+        rois: List[Rect] = []
+        for r in intent.get("rois", []):
+            parsed: Optional[Rect] = _parse_roi(r)
+            if parsed is not None:
+                rois.append(parsed)
         pieces: Dict[int, List[Rect]] = self._pieces(rois, geom, segments)
         panel: Dict[str, List[int]] = self._panel_params(geom.panel)
 
@@ -210,6 +222,11 @@ class RoiBinV010(ParamAdapter):
         for seg in sorted(segments):
             roi: Dict[str, List[int]] = dict(_EMPTY_ROI)
             if seg in pieces:
+                assert bin_rc is not None
+                r0: int
+                c0: int
+                r1: int
+                c1: int
                 r0, c0, r1, c1 = self._snap(pieces[seg][0], bin_rc)
                 if r1 > r0 and c1 > c0:
                     roi = {"roi_start": [0, r0, c0], "roi_shape": [1, r1 - r0, c1 - c0]}
@@ -244,4 +261,134 @@ class RoiBinV010(ParamAdapter):
                 list(geom.to_detector(seg, (row0, col0, row0 + height, col0 + width)))
             )
 
+        return {"rois": rois}
+
+
+class RoiBinV020(RoiBinV010):
+    """ROIBin version 0.2.0 adapter.
+
+    ROIBin version 0.2.0 supports up to 5 ROIs per panel. Binning in the time dimension
+    is allowed for up to 128 frames, and vetoed events are excluded from the bin. The
+    entire bin is dropped, though, if the final event (when the bin would be emitted)
+    happens to have been vetoed.
+
+    The remaining binning parameters are set per-ROI.
+    """
+
+    produces = (
+        "in_shape",
+        "num_rois",
+        "roi_start",
+        "roi_shape",
+        "bin",
+        "use_threshold",
+        "threshold",
+        "scale",
+        "asic_grid",
+        "asic_layout",
+    )
+    detector_scope = ("frames", "bin", "threshold", "use_threshold", "scale")
+
+    MAX_ROIS: int = 5
+    MAX_FRAMES: int = 128
+
+    def check(
+        self,
+        intent: Dict[str, Any],
+        geom: DetectorGeometry,
+        segments: List[int],
+        shared: Dict[str, Any],
+    ) -> List[str]:
+        problems: List[str] = [
+            p
+            for p in super().check(intent, geom, segments, shared)
+            if "supports one ROI per panel" not in p
+        ]
+        frames: Any = shared.get("frames", 1)
+        if not isinstance(frames, int) or not 1 <= frames <= self.MAX_FRAMES:
+            problems.append(
+                f"Error: frames must be 1 to {self.MAX_FRAMES}, got {frames}"
+            )
+
+        segs: List[int] = [s for s in segments if s in geom.segment_ids()]
+        rois: List[Rect] = [r for r in map(_parse_roi, intent.get("rois", [])) if r]
+        for seg, seg_pieces in self._pieces(rois, geom, segs).items():
+            if len(seg_pieces) > self.MAX_ROIS:
+                problems.append(
+                    f"Error: segment {seg} is overlapped by {len(seg_pieces)} ROIs. "
+                    f"ROIBin 0.2.0 supports {self.MAX_ROIS} per panel"
+                )
+        return problems
+
+    def partition(
+        self,
+        intent: Dict[str, Any],
+        geom: DetectorGeometry,
+        segments: List[int],
+        shared: Dict[str, Any],
+    ) -> Dict[int, Dict[str, Any]]:
+        errors = [
+            p
+            for p in self.check(intent, geom, segments, shared)
+            if p.startswith("Error:")
+        ]
+        if errors:
+            raise ValueError("; ".join(errors))
+
+        bin_rc: Optional[Tuple[int, int]] = _parse_bin(shared)
+        assert bin_rc is not None  # Should've flagged at check above
+
+        rois: List[Rect] = []
+        for r in intent.get("rois", []):
+            parsed: Optional[Rect] = _parse_roi(r)
+            if parsed is not None:
+                rois.append(parsed)
+
+        pieces: Dict[int, List[Rect]] = self._pieces(rois, geom, segments)
+        panel: Dict[str, List[int]] = self._panel_params(geom.panel)
+
+        out: Dict[int, Dict[str, Any]] = {}
+        for seg in sorted(segments):
+            starts: List[List[int]] = []
+            shapes: List[List[int]] = []
+            for piece in pieces.get(seg, []):
+                r0: int
+                c0: int
+                r1: int
+                c1: int
+                r0, c0, r1, c1 = self._snap(piece, bin_rc)
+                if r1 > r0 and c1 > c0:
+                    starts.append([0, r0, c0])
+                    shapes.append([1, r1 - r0, c1 - c0])
+
+            n: int = len(starts)
+            out[seg] = {
+                **panel,
+                "num_rois": n,
+                "roi_start": starts,
+                "roi_shape": shapes,
+                "bin": [[1, bin_rc[0], bin_rc[1]]] * n,
+                "use_threshold": [int(shared.get("use_threshold", 0))] * n,
+                "threshold": [float(shared.get("threshold", 0.0))] * n,
+                "scale": [float(shared.get("scale", 1.0))] * n,
+            }
+        return out
+
+    def assemble(
+        self, seg_params: Dict[int, Dict[str, Any]], geom: DetectorGeometry
+    ) -> Dict[str, Any]:
+        rois: List[List[int]] = []
+        for seg in sorted(seg_params):
+            params: Dict[str, Any] = seg_params[seg]
+            for (_, row0, col0), (_, height, width) in zip(
+                params["roi_start"], params["roi_shape"]
+            ):
+                if height and width:
+                    rois.append(
+                        list(
+                            geom.to_detector(
+                                seg, (row0, col0, row0 + height, col0 + width)
+                            )
+                        )
+                    )
         return {"rois": rois}
