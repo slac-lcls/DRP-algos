@@ -86,45 +86,57 @@ binning_v020_cc = custom_target(
 
 plugin_symbol_map = meson.current_source_dir() / 'drpalgos_plugin.map'
 
-abi_v0 = ['-DDRP_KERNEL_CTX_ABI=0']
+###############################
+# ABI-Pinned Plugin Libraries #
+###############################
+# Selection of ABI libs to build comes from meson option
 
-DrpAlgosV0_lib = shared_library(
-    'DrpAlgos.abiV0',
-    [
-        'drp/BinningV0.cu',
-        'drp/BinningV020.cc',
-        'drp/ROIBinV010.cu',
-    ] + binning_v020_cc,
-    include_directories: [drp_algos_include],
-    install: true,
-    install_rpath: lib_install_rpath,
-    link_args: ['-Wl,--version-script=' + plugin_symbol_map],
-    link_depends: plugin_symbol_map,
-    cpp_args: abi_v0,
-    cuda_args: drp_algos_cuda_args + abi_v0,
-    dependencies: deps_for_drp_algos + DrpAlgosCore_dep + DrpAlgosJit_dep,
-    gnu_symbol_visibility: 'inlineshidden',
-)
+if '0' in get_option('ctx_abis')
+    abi_v0 = ['-DDRP_KERNEL_CTX_ABI=0']
 
-abi_v1 = ['-DDRP_KERNEL_CTX_ABI=1']
+    DrpAlgosV0_lib = shared_library(
+        'DrpAlgos.abiV0',
+        [
+            'drp/BinningV0.cu',
+            'drp/BinningV020.cc',
+            'drp/ROIBinV010.cu',
+        ] + binning_v020_cc,
+        include_directories: [drp_algos_include],
+        install: true,
+        install_rpath: lib_install_rpath,
+        link_args: ['-Wl,--version-script=' + plugin_symbol_map],
+        link_depends: plugin_symbol_map,
+        cpp_args: abi_v0,
+        cuda_args: drp_algos_cuda_args + abi_v0,
+        dependencies: deps_for_drp_algos + DrpAlgosCore_dep + DrpAlgosJit_dep,
+        gnu_symbol_visibility: 'inlineshidden',
+    )
+endif # Build ABI V0
 
-DrpAlgosV1_lib = shared_library(
-    'DrpAlgos.abiV1',
-    [
-        'drp/BinningV011.cu',
-        'drp/BinningV021.cc',
-        'drp/ROIBinV020.cu',
-    ] + binning_v020_cc,
-    include_directories: [drp_algos_include],
-    install: true,
-    install_rpath: lib_install_rpath,
-    link_args: ['-Wl,--version-script=' + plugin_symbol_map],
-    link_depends: plugin_symbol_map,
-    cpp_args: abi_v1,
-    cuda_args: drp_algos_cuda_args + abi_v1,
-    dependencies: deps_for_drp_algos + DrpAlgosCore_dep + DrpAlgosJit_dep,
-    gnu_symbol_visibility: 'inlineshidden',
-)
+if '1' in get_option('ctx_abis')
+    abi_v1 = ['-DDRP_KERNEL_CTX_ABI=1']
+
+    DrpAlgosV1_lib = shared_library(
+        'DrpAlgos.abiV1',
+        [
+            'drp/BinningV011.cu',
+            'drp/BinningV021.cc',
+            'drp/ROIBinV020.cu',
+        ] + binning_v020_cc,
+        include_directories: [drp_algos_include],
+        install: true,
+        install_rpath: lib_install_rpath,
+        link_args: ['-Wl,--version-script=' + plugin_symbol_map],
+        link_depends: plugin_symbol_map,
+        cpp_args: abi_v1,
+        cuda_args: drp_algos_cuda_args + abi_v1,
+        dependencies: deps_for_drp_algos + DrpAlgosCore_dep + DrpAlgosJit_dep,
+        gnu_symbol_visibility: 'inlineshidden',
+    )
+endif # Build ABI V1
+
+########################
+# End Plugin Libraries #
 
 # Setup dependency for the consumers using core libs only
 # DrpAlgos is dlopend.
