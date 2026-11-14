@@ -1,5 +1,6 @@
 #include "DrpAlgos/algorithms/roibin.cuh"
 #include "DrpAlgos/drp/KernelRegistry.hh"
+#include "DrpAlgos/drp/Metrics.hh"
 #include "DrpAlgos/drp/TypedKernelDescriptor.hh"
 
 #include <cuda_runtime.h>
@@ -155,6 +156,10 @@ namespace {
     cuda::std::array<unsigned long long, kBinSlots> owner;   ///< Bin allowed to use each slot
     cuda::std::array<unsigned, kBinSlots> filled;            ///< Frames staged into each slot
     cuda::std::array<unsigned long long[2], kBinSlots> mask;
+
+    unsigned long long binsDropped;   ///< Bins lost when a vetoed event was on the emit event
+    unsigned long long framesDropped; ///< Total events lost when a bin is dropped
+    unsigned long long binsPartial;   ///< Total bins emitted without all frames (due to vetoed events)
   };
 
   /// Device view of the time-binning state shared by all reducer workers.
@@ -432,6 +437,15 @@ namespace {
         return;
       }
 
+      const unsigned lost {
+        static_cast<unsigned>(__popcll(state.counters->mask[slot][0]) +
+                              __popcll(state.counters->mask[slot][1]))
+      };
+      if (lost > 0) {
+        atomicAdd(&state.counters->binsDropped, 1ULL);
+        atomicAdd(&state.counters->framesDropped, static_cast<unsigned long long>(lost));
+      }
+
       state.counters->filled[slot] = 0;
       state.counters->mask[slot][0] = 0;
       state.counters->mask[slot][1] = 0;
@@ -495,6 +509,9 @@ namespace {
     ROIBinHeader* hdr { evt.out_as<ROIBinHeader>() };
     hdr->bin = seq / worker_consts.frames;
     hdr->frames = __popcll(state.counters->mask[slot][0]) + __popcll(state.counters->mask[slot][1]);
+    if (hdr->frames < worker_consts.frames) {
+      atomicAdd(&state.counters->binsPartial, 1ULL);
+    }
     hdr->flags = (wraps > 1) ? kFlagOrderSuspect : 0u;
     hdr->presence[0] = state.counters->mask[slot][0];
     hdr->presence[1] = state.counters->mask[slot][1];
@@ -549,8 +566,21 @@ namespace {
     }
   };
 
-  class ROIBinV0_2_0 final : public DrpAlgos::TypedKernelDescriptor<ROIBinParams> {
+  class ROIBinV0_2_0 final
+    : public DrpAlgos::TypedKernelDescriptor<ROIBinParams>
+    , public DrpAlgos::IMetrics_v1 {
   public:
+    void* query(std::uint32_t iface_id) override {
+      if (iface_id == IMetrics_v1::id && m_storage) {
+        return static_cast<IMetrics_v1*>(this);
+      }
+
+      return nullptr;
+    }
+
+    std::size_t metricCount() const override { return m_storage ? m_metrics.size() : 0; }
+    const Metric* metrics() const override { return m_metrics.data(); }
+
     std::size_t payloadSize() const override {
       return sizeof(ROIBinHeader) + std::size_t { outElems() } * sizeof(float);
     }
@@ -670,6 +700,19 @@ namespace {
       } else {
         m_storage.reset();
       }
+
+      if (m_storage) {
+        const auto base { reinterpret_cast<std::uintptr_t>(m_storage->counters.get()) };
+        auto dev = [base](std::size_t off) {
+          return reinterpret_cast<const unsigned long long*>(base + off);
+        };
+
+        m_metrics = {{
+            { "ROIBin_binsDropped", 0, dev(offsetof(FrameBinCounters, binsDropped)) },
+            { "ROIBin_framesDropped", 0, dev(offsetof(FrameBinCounters, framesDropped)) },
+            { "ROIBin_binsPartial", 0, dev(offsetof(FrameBinCounters, binsPartial)) },
+        }};
+      }
     }
 
   private:
@@ -684,6 +727,8 @@ namespace {
 
       return totalOut;
     }
+
+    std::array<Metric, 3> m_metrics {};
 
     std::unique_ptr<FrameBinStorage> m_storage; ///< Time-binning state (shared by all Reducer workers)
     unsigned m_nWorkers { 1 };                  ///< The number of Reducer workers (as set by the DRP)
