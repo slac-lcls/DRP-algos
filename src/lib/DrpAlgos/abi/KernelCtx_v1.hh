@@ -21,6 +21,11 @@ namespace DrpAlgos::abi::v1 {
   using CalibFP = float;
   using BigUint = unsigned long long; // Avoid issues with size_t etc across NVRTC
 
+  constexpr unsigned kGateIdle   { 0 }; ///< No event
+  constexpr unsigned kGateActive { 1 }; ///< Event with data
+  constexpr unsigned kGateDone   { 2 }; ///< Set after reduction on finalize
+  constexpr unsigned kGateVetoed { 3 }; ///< Event exists, but has no data (vetoed)
+
   /**
    * Unified context with state to run an algorithm within a DRP reducer.
    *
@@ -55,6 +60,7 @@ namespace DrpAlgos::abi::v1 {
    */
   struct DrpEvent {
     bool is_active;     ///< Whether the algorithm can proceed. If false, return without IO
+    bool is_vetoed;     ///< Whether the event was vetoed (for book-keeping on event couonters)
     BigUint seq;        ///< Event sequence number (e.g. L1Accept counter)
     const CalibFP* in;  ///< Pointer to the event's calibrated input
     unsigned char* out; ///< Pointer to the slot to write output data
@@ -78,28 +84,25 @@ namespace DrpAlgos::abi::v1 {
       // Wrong ABI
       return {
         false,
+        false,
         0,
         nullptr,
         nullptr
       };
     }
 
-    const bool is_active { (ctx.gate == nullptr) || (*ctx.gate == 1) };
-    if (!is_active) {
-      return {
-        false,
-        ctx.seq ? *ctx.seq : 0ULL,
-        nullptr,
-        nullptr
-      };
-    }
+    const unsigned gate { ctx.gate ? *ctx.gate : kGateActive };
+    const BigUint seq { ctx.seq ? *ctx.seq : 0ULL };
+    const bool is_active { gate == kGateActive };
+    const bool is_vetoed { gate == kGateVetoed };
 
     const unsigned slot { *ctx.slot };
     return {
-      true,
-      ctx.seq ? *ctx.seq : 0ULL,
-      ctx.in + slot * ctx.inStride,
-      ctx.out + slot * ctx.outStride + ctx.rawBytes
+      is_active,
+      is_vetoed,
+      seq,
+      is_active ? ctx.in + slot * ctx.inStride : nullptr,
+      is_active ? ctx.out + slot * ctx.outStride + ctx.rawBytes : nullptr
     };
   }
 

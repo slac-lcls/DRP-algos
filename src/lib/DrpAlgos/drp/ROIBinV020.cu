@@ -305,7 +305,9 @@ namespace {
                                 FrameBinState state,
                                 WorkerBinConsts worker_consts) {
     const auto evt { drp_event(ctx) };
-
+    if (!evt.is_active && !evt.is_vetoed) {
+      return;
+    }
     const unsigned long long seq { evt.seq };
     const unsigned slot { binSlot(seq, worker_consts) };
 
@@ -317,7 +319,7 @@ namespace {
       __nanosleep(128);
     }
 
-    if (!evt.is_active) {
+    if (evt.is_vetoed) {
       // If the event is inactive, still count it as seen.
       // The mask below records actual presence in the time bin.
       cuda::atomic_ref<unsigned, cuda::thread_scope_device> filled {
@@ -375,6 +377,9 @@ namespace {
                                FrameBinState state,
                                WorkerBinConsts worker_consts) {
     const auto evt { drp_event(ctx) };
+    if (!evt.is_active && !evt.is_vetoed) {
+      return;
+    }
     const unsigned long long seq { evt.seq };
     const unsigned slot { binSlot(seq, worker_consts) };
 
@@ -409,22 +414,20 @@ namespace {
                                unsigned long long outBytes,
                                unsigned* doneBlocks) {
     const auto evt { drp_event(ctx) };
-
+    if (!evt.is_active && !evt.is_vetoed) {
+      return;
+    }
     const unsigned long long seq { evt.seq };
     const unsigned slot { binSlot(seq, worker_consts) };
 
     const bool emit { seq % worker_consts.frames == worker_consts.frames - 1 };
     if (!emit) {
-      if (!evt.is_active) {
-        return;
-      }
-
       if (blockIdx.x == 0 && threadIdx.x == 0) {
         drp_commit(ctx, { 0ULL, 0 });
       }
 
       return;
-    } else if (!evt.is_active) {
+    } else if (evt.is_vetoed) {
       // Last event of the bin was supposed to emit it. But since we're inactive
       // the event was vetoed. Just reset our counters
       __threadfence();
