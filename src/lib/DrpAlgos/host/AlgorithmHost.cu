@@ -31,11 +31,11 @@ namespace {
                               unsigned char* const out,
                               unsigned long long const outStride,
                               unsigned long long const fixedSize) {
-    if (gate && *gate != 1) {
+    if (gate && !(*gate == 1 || *gate == 3)) {
       return;
     }
 
-    if (fixedSize) {
+    if ((!gate || *gate == 1) && fixedSize) {
       reinterpret_cast<unsigned long long*>(out + (*slot) * outStride)[-1] = fixedSize;
     }
 
