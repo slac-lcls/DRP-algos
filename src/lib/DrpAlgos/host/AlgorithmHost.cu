@@ -26,42 +26,6 @@ namespace {
     return (v + a - 1) / a * a;
   }
 
-  __global__ void drpFinalize(unsigned* const gate,
-                              const unsigned* const slot,
-                              unsigned char* const out,
-                              unsigned long long const outStride,
-                              unsigned long long const fixedSize) {
-    if (gate && !(*gate == 1 || *gate == 3)) {
-      return;
-    }
-
-    if ((!gate || *gate == 1) && fixedSize) {
-      reinterpret_cast<unsigned long long*>(out + (*slot) * outStride)[-1] = fixedSize;
-    }
-
-    if (gate) {
-      *gate = 2; // Hand off to the DRP's reducer loop
-    }
-  }
-
-  void recordWithHandshake(DrpAlgos::IKernelDescriptor& desc,
-                           DrpAlgos::LatestCtx ctx,
-                           cudaStream_t stream) {
-    launchAnyAbi(desc, ctx, stream);
-
-    drpFinalize<<<1, 1, 0, stream>>>(const_cast<unsigned*>(ctx.gate),
-                                     ctx.slot,
-                                     ctx.out,
-                                     ctx.outStride,
-                                     desc.variableSize() ? 0ULL : desc.payloadSize());
-
-    const cudaError_t err { cudaGetLastError() };
-    if (err != cudaSuccess) {
-      throw std::runtime_error(std::string("DRP finalize launch failed: ") +
-                               cudaGetErrorString(err));
-    }
-  }
-
   __global__ void armWorker(unsigned* const gate,
                             unsigned* const slotWord,
                             unsigned long long* const workerSeq,
@@ -179,7 +143,8 @@ namespace DrpAlgos {
         check(cudaStreamBeginCapture(worker.stream, cudaStreamCaptureModeThreadLocal),
               "BeginCapture (worker)");
         try {
-          recordWithHandshake(*m_desc, ctx, worker.stream);
+          // seqStride is left as 0 here - AlgorithmHost advances seq counter on arm.
+          recordAlgorithm(*m_desc, ctx, /*seqStride=*/0, worker.stream);
         } catch (...) {
           cudaStreamEndCapture(worker.stream, &graph);
           if (graph) {
