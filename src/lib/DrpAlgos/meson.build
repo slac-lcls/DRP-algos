@@ -2,12 +2,14 @@ DrpAlgosCore_lib = shared_library(
     'DrpAlgosCore',
     [
         'drp/KernelRegistry.cc',
+        'drp/Launch.cu',
     ],
     include_directories: [drp_algos_include],
     install: true,
     install_rpath: lib_install_rpath,
     link_with: [],
     dependencies: deps_for_drp_algos,
+    cuda_args: drp_algos_cuda_args,
     gnu_symbol_visibility: 'inlineshidden',
 )
 

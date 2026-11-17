@@ -134,6 +134,53 @@ namespace DrpAlgos::abi::v1 {
     }
   }
 #endif // __CUDACC__ || __CUDACC_RTC__
+
+  // The namespace itself should always be visible, even if its empty
+  namespace details {
+#if defined(__CUDACC__) || defined(__CUDACC_RTC__)
+    /**
+     * Complete the state machine transitions after reduction completes.
+     *
+     * If active, `fixedSize` is written into the size location. If `vetoed`,
+     * 0 is written (no payload). In both cases, if the seqStride is non-zero,
+     * the sequence counter is advanced for the use of any reduction algorithms
+     * that will need to count events. The done state is then written to move
+     * the system along.
+     *
+     * @note For the idle case, nothing is done here.
+     *
+     * @warning This is an adapter utility only! I.e., for AlgorithmHost, or the
+     *          actual DRP integration. Actual algorithms should only use `drp_commit`.
+     */
+    __device__ inline void drp_finalize(const DrpKernelCtx& ctx,
+                                        BigUint fixedSize,
+                                        BigUint seqStride) {
+      const auto evt { drp_event(ctx) };
+      if (!evt.is_active && !evt.is_vetoed) {
+        return;
+      }
+
+      const unsigned slot { *ctx.slot };
+      BigUint* const size {
+        reinterpret_cast<BigUint*>(ctx.out + slot * ctx.outStride) - 1
+      };
+
+      if (evt.is_vetoed) {
+        *size = 0;
+      } else if (fixedSize) {
+        *size = fixedSize;
+      }
+
+      if (ctx.seq && seqStride) {
+        *const_cast<BigUint*>(ctx.seq) += seqStride;
+      }
+
+      if (ctx.gate) {
+        *const_cast<unsigned*>(ctx.gate) = kGateDone;
+      }
+    }
+#endif // __CUDACC__ || __CUDACC_RTC__
+  } // namespace details
 } // namespace DrpAlgos::abi::v1
 
 #endif // DRP_ALGOS_ABI_KERNEL_CTX_V1_HH

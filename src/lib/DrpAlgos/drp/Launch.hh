@@ -5,6 +5,7 @@
 #include "DrpAlgos/abi/KernelCtx_v0.hh"
 #include "DrpAlgos/abi/KernelCtx_v1.hh"
 #include "DrpAlgos/drp/KernelDescriptor.hh"
+#include "DrpAlgos/export_macro.hh"
 
 #include <cuda_runtime.h>
 
@@ -12,6 +13,9 @@
 
 namespace DrpAlgos {
   using LatestCtx = abi::v1::DrpKernelCtx;
+
+  // For adapter helper functions like drp_finalize
+  namespace details = abi::v1::details;
 
   /**
    * Conversion from V1 ABI to V0 as needed.
@@ -47,5 +51,29 @@ namespace DrpAlgos {
     }
     }
   }
+
+  /**
+   * Complete the state machine transitions after reduction completes.
+   *
+   * If active, `fixedSize` is written into the size location. If `vetoed`,
+   * 0 is written (no payload). In both cases, if the seqStride is non-zero,
+   * the sequence counter is advanced for the use of any reduction algorithms
+   * that will need to count events. The done state is then written to move
+   * the system along.
+   *
+   * @note For the idle case, nothing is done here.
+   */
+  DRP_ALGOS_API void recordFinalize(const LatestCtx& ctx,
+                                    unsigned long long fixedSize,
+                                    unsigned long long seqStride,
+                                    cudaStream_t stream);
+
+  /**
+   * Run `launchAnyAbi` and then `recordFinalize`.
+   */
+  DRP_ALGOS_API void recordAlgorithm(IKernelDescriptor& desc,
+                                     const LatestCtx& ctx,
+                                     unsigned long long seqStride,
+                                     cudaStream_t stream);
 }
 #endif // DRP_ALGOS_DRP_LAUNCH_HH
