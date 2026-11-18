@@ -1,8 +1,9 @@
 #include "DrpAlgos/host/AlgorithmHost.hh"
 
-#include "DrpAlgos/drp/KernelCtx.hh"
+#include "DrpAlgos/KernelCtx.hh"
 #include "DrpAlgos/drp/KernelDescriptor.hh"
 #include "DrpAlgos/drp/KernelRegistry.hh"
+#include "DrpAlgos/drp/Launch.hh"
 
 #include <algorithm>
 #include <cstddef>
@@ -25,48 +26,15 @@ namespace {
     return (v + a - 1) / a * a;
   }
 
-  __global__ void drpFinalize(unsigned* const gate,
-                              const unsigned* const slot,
-                              unsigned char* const out,
-                              unsigned long long const outStride,
-                              unsigned long long const fixedSize) {
-    if (gate && *gate != 1) {
-      return;
-    }
-
-    if (fixedSize) {
-      reinterpret_cast<unsigned long long*>(out + (*slot) * outStride)[-1] = fixedSize;
-    }
-
-    if (gate) {
-      *gate = 2; // Hand off to the DRP's reducer loop
-    }
-  }
-
-  void recordWithHandshake(DrpAlgos::IKernelDescriptor& desc,
-                           DrpKernelCtx ctx,
-                           cudaStream_t stream) {
-    desc.launch(ctx, stream);
-
-    drpFinalize<<<1, 1, 0, stream>>>(const_cast<unsigned*>(ctx.gate),
-                                     ctx.slot,
-                                     ctx.out,
-                                     ctx.outStride,
-                                     desc.variableSize() ? 0ULL : desc.payloadSize());
-
-    const cudaError_t err { cudaGetLastError() };
-    if (err != cudaSuccess) {
-      throw std::runtime_error(std::string("DRP finalize launch failed: ") +
-                               cudaGetErrorString(err));
-    }
-  }
-
   __global__ void armWorker(unsigned* const gate,
                             unsigned* const slotWord,
+                            unsigned long long* const workerSeq,
                             unsigned const slot,
+                            unsigned long long const currentSeq,
                             unsigned char* const outBase,
                             unsigned long long const outStride) {
     *slotWord = slot;
+    *workerSeq = currentSeq;
     *reinterpret_cast<unsigned long long*>(outBase + slot * outStride) = 0; // Clear size header
     *gate = 1;
   }
@@ -111,7 +79,8 @@ namespace DrpAlgos {
     m_workers.resize(cfg.workers);
     m_desc = KernelRegistry::instance().create(name, version, soname);
     m_desc->setWorkers(cfg.workers);
-    m_desc->configure(params);
+    auto paramsStr { params.dump() };
+    m_desc->configure(paramsStr.c_str(), paramsStr.size());
     m_payloadSize = m_desc->payloadSize();
 
     // Each slot's size header sits in the tail padding of the previous slot,
@@ -144,25 +113,38 @@ namespace DrpAlgos {
               "cudaStreamCreate(worker)");
         check(cudaMalloc(&worker.gate, sizeof(unsigned)), "cudaMalloc(worker gate)");
         check(cudaMalloc(&worker.slot, sizeof(unsigned)), "cudaMalloc(worker slot)");
+        check(cudaMalloc(&worker.retCode, sizeof(unsigned)),
+              "cudaMalloc(worker retCode)");
+        check(cudaMalloc(&worker.seq, sizeof(unsigned long long)),
+              "cudaMalloc(worker seq)");
 
         check(cudaMemset(worker.gate, 0, sizeof(unsigned)), "cudaMemset(worker gate)");
         check(cudaMemset(worker.slot, 0, sizeof(unsigned)), "cudaMemset(worker slot)");
+        check(cudaMemset(worker.retCode, 0, sizeof(unsigned)),
+              "cudaMemset(worker retCode)");
 
-        const DrpKernelCtx ctx {
-          worker.gate,
-          worker.slot,
-          m_in,
-          cfg.inElems,
-          m_outBase + kHeader,
-          m_outStride,
-          nullptr
+        // ALWAYS use the latest ABI. Internally, the infrastructure will translate
+        // where needed for any remaining interfaces compiled against older ABI versions
+        const LatestCtx ctx {
+          .abi       = LatestCtx::kABI,
+          .gate      = worker.gate,
+          .slot      = worker.slot,
+          .in        = m_in,
+          .inStride  = cfg.inElems,
+          .out       = m_outBase + kHeader,
+          .outStride = m_outStride,
+          .retCode   = worker.retCode,
+          .seq       = worker.seq,
+          .rawBytes  = 0,
+          .params    = nullptr
         };
 
         cudaGraph_t graph { nullptr };
         check(cudaStreamBeginCapture(worker.stream, cudaStreamCaptureModeThreadLocal),
               "BeginCapture (worker)");
         try {
-          recordWithHandshake(*m_desc, ctx, worker.stream);
+          // seqStride is left as 0 here - AlgorithmHost advances seq counter on arm.
+          recordAlgorithm(*m_desc, ctx, /*seqStride=*/0, worker.stream);
         } catch (...) {
           cudaStreamEndCapture(worker.stream, &graph);
           if (graph) {
@@ -204,6 +186,14 @@ namespace DrpAlgos {
         cudaFree(worker.slot);
       }
 
+      if (worker.retCode) {
+        cudaFree(worker.retCode);
+      }
+
+      if (worker.seq) {
+        cudaFree(worker.seq);
+      }
+
       if (worker.stream) {
         cudaStreamDestroy(worker.stream);
       }
@@ -211,6 +201,8 @@ namespace DrpAlgos {
       worker.graphExec = nullptr;
       worker.gate = nullptr;
       worker.slot = nullptr;
+      worker.retCode = nullptr;
+      worker.seq = nullptr;
       worker.stream = nullptr;
     }
 
@@ -261,7 +253,9 @@ namespace DrpAlgos {
 
     armWorker<<<1, 1, 0, worker.stream>>>(worker.gate,
                                           worker.slot,
+                                          worker.seq,
                                           slot,
+                                          static_cast<unsigned long long>(event),
                                           m_outBase,
                                           m_outStride);
 
@@ -353,15 +347,17 @@ namespace DrpAlgos {
       return bench;
     }
 
-    for (std::size_t warmup = 0; warmup < m_workers.size(); ++warmup) {
-      submit(warmup, m_frame);
-      (void)collect(warmup);
+    for (std::size_t warmup_iter = 0; warmup_iter < m_workers.size(); ++warmup_iter) {
+      std::size_t warmup_evt { static_cast<std::size_t>(m_next++) };
+      submit(warmup_evt, m_frame);
+      (void)collect(warmup_evt);
     }
 
     bench.minUs = 1e30f;
     double totalUs { 0.0 };
     const auto t0 { std::chrono::steady_clock::now() };
-    for (std::size_t event = 0; event < iterations; ++event) {
+    for (std::size_t iter = 0; iter < iterations; ++iter) {
+      std::size_t event { static_cast<std::size_t>(m_next++) };
       submit(event, m_frame);
       auto res = collect(event);
 

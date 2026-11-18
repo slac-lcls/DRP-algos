@@ -1,6 +1,6 @@
 #include "DrpAlgos/drp/JITKernelDescriptor.hh"
 
-#include "DrpAlgos/drp/KernelCtx.hh"
+#include "DrpAlgos/KernelCtx.hh"
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -19,9 +19,11 @@
 
 namespace DrpAlgos {
   /**
-   * Embedded contents of KernelCtx.hh.
+   * Embedded contents of KernelCtx.hh and ABI version implementations
    */
   extern const char* const kDrpKernelCtxHeaderSource;
+  extern const char* const kDrpKernelCtxV0HeaderSource;
+  extern const char* const kDrpKernelCtxV1HeaderSource;
 
   struct JITKernel {
     CUlibrary library { nullptr }; ///< Never unloaded: lives for the process (like dlopen'd libs)
@@ -287,8 +289,17 @@ namespace DrpAlgos {
       }
 
       nvrtcProgram prog;
-      std::vector<const char*> headers { kDrpKernelCtxHeaderSource };
-      std::vector<const char*> includeNames { "DrpAlgos/drp/KernelCtx.hh" };
+      std::vector<const char*> headers {
+        kDrpKernelCtxHeaderSource,
+        kDrpKernelCtxV0HeaderSource,
+        kDrpKernelCtxV1HeaderSource
+      };
+      std::vector<const char*> includeNames {
+        "DrpAlgos/KernelCtx.hh",
+        // And the actual ABI implementations
+        "DrpAlgos/abi/KernelCtx_v0.hh",
+        "DrpAlgos/abi/KernelCtx_v1.hh"
+      };
       for (const auto& h : extraHeaders) {
         headers.push_back(h.source);
         includeNames.push_back(h.name);
@@ -311,6 +322,12 @@ namespace DrpAlgos {
       for (const auto& o : opts) {
         cOpts.push_back(o.c_str());
       }
+
+      // Pass along the ABI version information
+      const std::string abiOpt {
+        "-DDRP_KERNEL_CTX_ABI=" + std::to_string(DRP_KERNEL_CTX_ABI)
+      };
+      cOpts.push_back(abiOpt.c_str());
 
       const nvrtcResult res {
         nvrtcCompileProgram(prog, static_cast<int>(cOpts.size()), cOpts.data())
@@ -366,7 +383,9 @@ namespace DrpAlgos {
     return os.str();
   }
 
-  void JITKernelDescriptor::configure(const nlohmann::json& params) {
+  //void JITKernelDescriptor::configure(const nlohmann::json& params) {
+  void JITKernelDescriptor::configure(const char* paramsStr, std::size_t paramsLen) {
+    const auto params { nlohmann::json::parse(paramsStr, paramsStr + paramsLen) };
     onConfigure(params);
 
     const JITSource src { source() };
@@ -388,13 +407,13 @@ namespace DrpAlgos {
     m_defaultGrid = 4u * static_cast<unsigned>(sms);
   }
 
-  void JITKernelDescriptor::launch(DrpKernelCtx ctx, cudaStream_t stream) {
+  void JITKernelDescriptor::launch(const void* ctx, cudaStream_t stream) {
     if (!m_kernel) {
       throw std::logic_error("JITKernelDescriptor::launch() called before configure()");
     }
 
-    ctx.params = nullptr; // Parameters are compiled in
-    void* args[] = { &ctx };
+    // ctx.params = nullptr; // Parameters are compiled in
+    void* args[] = { const_cast<void*>(ctx) };
     check(cuLaunchKernel(reinterpret_cast<CUfunction>(m_kernel->kernel), // CUkernel is accepted here
                          gridSize(), 1, 1,
                          blockSize(), 1, 1,

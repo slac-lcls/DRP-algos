@@ -44,7 +44,7 @@ namespace {
   public:
     std::size_t payloadSize() const override { return outElems() * sizeof(float); }
 
-    void launch(DrpKernelCtx ctx, cudaStream_t stream) override {
+    void launchTyped(const DrpCtx& ctx, cudaStream_t stream) override {
       constexpr unsigned threads { 256 };
       const unsigned blocks { static_cast<unsigned>((outElems() + threads - 1) / threads) };
       binningKernel<<<blocks, threads, 0, stream>>>(withParams(ctx));
