@@ -86,11 +86,16 @@ namespace DrpAlgos {
      *
      * The helper functions defined in `KernelCtx.hh` should be used to help:
      * - Get `DrpEvent` which has input/output info: `drp_event(ctx)`
-     *   - evt.in , evt.out, evt.active
+     *   - evt.in , evt.out, evt.is_active, evt.is_vetoed, evt.seq
      * - Retrieve the configured parameters: `drp_params<PARAM_STRUCT_TYPE>(ctx)`
      *
      * Upon completion, the final result is "committed" using:
      * - drp_commit(ctx, result)
+     *
+     * @note The final say on writing size, sequence counter etc, is done by the
+     *       orchestration system (AlgorithmHost, or the actual DRP) - generally
+     *       using helpers such as recordAlgorithm/recordFinalize. This shoudl NOT
+     *       be done by the algorithm itself!
      *
      * @param[in] ctx The algorithm kernel(s) context for input/output, parameters
      *                and DRP state. Passed by pointer for the ABI version indicated
