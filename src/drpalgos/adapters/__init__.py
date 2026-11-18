@@ -33,10 +33,16 @@ class ParamAdapter:
     """The plugin is the accepted intent type for the adapter. It MUST match a plugins `intent_type.`"""
     produces: ClassVar[Tuple[str, ...]] = ()
     """The schema properties per segment."""
-    detector_scope: ClassVar[
-        Tuple[str, ...]
-    ] = ()
+    detector_scope: ClassVar[Tuple[str, ...]] = ()
     """The detector-scope parameters (which will then apply to all segments)"""
+    inputs: ClassVar[Dict[str, Dict[str, Any]]] = {}
+    """Form specs for detector-scope parameters whose per-segment schema differs
+    (e.g. one value expanded per ROI). Overrides the schema spec in the form and is
+    shown even if the name is also in `produces`."""
+
+    def shared_from(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Form values for `inputs` recovered from one segment's parameters."""
+        return {}
 
     def check(
         self,

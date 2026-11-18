@@ -289,8 +289,26 @@ class RoiBinV020(RoiBinV010):
     )
     detector_scope = ("frames", "bin", "threshold", "use_threshold", "scale")
 
+    inputs = {
+        "bin": {"type": "array", "title": "bin [1, rows, cols]", "default": [1, 1, 1]},
+        "use_threshold": {"type": "boolean", "default": False},
+        "threshold": {"type": "FLOAT", "default": 0.0},
+        "scale": {"type": "FLOAT", "default": 1.0},
+    }
+
     MAX_ROIS: int = 5
     MAX_FRAMES: int = 128
+
+    def shared_from(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Per-ROI values are written identically, so the first ROI's are the form's."""
+        if not params.get("num_rois"):
+            return {}
+        return {
+            "bin": list(params["bin"][0]),
+            "use_threshold": bool(params["use_threshold"][0]),
+            "threshold": float(params["threshold"][0]),
+            "scale": float(params["scale"][0]),
+        }
 
     def check(
         self,
