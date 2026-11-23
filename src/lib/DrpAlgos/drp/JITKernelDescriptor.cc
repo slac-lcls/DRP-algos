@@ -385,7 +385,7 @@ namespace DrpAlgos {
 
   //void JITKernelDescriptor::configure(const nlohmann::json& params) {
   void JITKernelDescriptor::configure(const char* paramsStr, std::size_t paramsLen) {
-    const auto params { nlohmann::json::parse(paramsStr, paramsStr + paramsLen) };
+    const auto params = nlohmann::json::parse(paramsStr, paramsStr + paramsLen);
     onConfigure(params);
 
     const JITSource src { source() };
