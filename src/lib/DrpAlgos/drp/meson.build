@@ -6,6 +6,7 @@ install_headers(
     'KernelRegistry.hh',
     'Launch.hh',
     'Metrics.hh',
+    'Requirements.hh',
     'TypedKernelDescriptor.hh',
     'Version.hh',
     subdir: 'DrpAlgos/drp',

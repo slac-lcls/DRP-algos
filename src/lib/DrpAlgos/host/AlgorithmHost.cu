@@ -4,6 +4,7 @@
 #include "DrpAlgos/drp/KernelDescriptor.hh"
 #include "DrpAlgos/drp/KernelRegistry.hh"
 #include "DrpAlgos/drp/Launch.hh"
+#include "DrpAlgos/drp/Requirements.hh"
 
 #include <algorithm>
 #include <cstddef>
@@ -82,6 +83,13 @@ namespace DrpAlgos {
     auto paramsStr { params.dump() };
     m_desc->configure(paramsStr.c_str(), paramsStr.size());
     m_payloadSize = m_desc->payloadSize();
+
+    // Check for requirements
+    constexpr std::uint32_t kSupported { Requirements_v1::kVetoedEvents };
+    const auto* req { static_cast<const Requirements_v1*>(m_desc->query(Requirements_v1::id)) };
+    if (req && (req->required & ~kSupported)) {
+      throw std::runtime_error("AlgorithmHost: algorithm has unsupported requirements.");
+    }
 
     // Each slot's size header sits in the tail padding of the previous slot,
     // so the stride must leave room for it

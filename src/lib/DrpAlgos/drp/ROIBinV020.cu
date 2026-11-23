@@ -1,6 +1,7 @@
 #include "DrpAlgos/algorithms/roibin.cuh"
 #include "DrpAlgos/drp/KernelRegistry.hh"
 #include "DrpAlgos/drp/Metrics.hh"
+#include "DrpAlgos/drp/Requirements.hh"
 #include "DrpAlgos/drp/TypedKernelDescriptor.hh"
 
 #include <cuda_runtime.h>
@@ -574,6 +575,10 @@ namespace {
     , public DrpAlgos::IMetrics_v1 {
   public:
     void* query(std::uint32_t iface_id) override {
+      if (iface_id == DrpAlgos::Requirements_v1::id) {
+        return &m_requirements;
+      }
+
       if (iface_id == IMetrics_v1::id && m_storage) {
         return static_cast<IMetrics_v1*>(this);
       }
@@ -675,8 +680,12 @@ namespace {
       }
 
       if (m_params.frames == 0 || m_params.frames > 128) {
-        throw std::invalid_argument("[ROIBin 0.2.0] Frames must be >= 1 annd < 128 (for time binning)");
+        throw std::invalid_argument("[ROIBin 0.2.0] Frames must be >= 1 annd <= 128 (for time binning)");
       }
+
+      // When binning in time, the vetoed events must be passed to the algorithm as well
+      m_requirements.required =
+        m_params.frames > 1 ? DrpAlgos::Requirements_v1::kVetoedEvents : 0u;
 
       // Require that in_shape rows and columns can split evenly across the ASIC grid
       // and an ASIC index is used exactly once, for panel tiling
@@ -733,9 +742,10 @@ namespace {
 
     std::array<Metric, 3> m_metrics {};
 
-    std::unique_ptr<FrameBinStorage> m_storage; ///< Time-binning state (shared by all Reducer workers)
-    unsigned m_nWorkers { 1 };                  ///< The number of Reducer workers (as set by the DRP)
-    unsigned m_nextWorker { 0 };                ///< The next worker recorded by `launch`
+    std::unique_ptr<FrameBinStorage> m_storage;  ///< Time-binning state (shared by all Reducer workers)
+    DrpAlgos::Requirements_v1 m_requirements {}; ///< Requirements to provide launcher (algo needs vetoed events)
+    unsigned m_nWorkers { 1 };                   ///< The number of Reducer workers (as set by the DRP)
+    unsigned m_nextWorker { 0 };                 ///< The next worker recorded by `launch`
   };
 
   REGISTER_KERNEL("ROIBin", 0, 2, 0, ROIBinV0_2_0)
