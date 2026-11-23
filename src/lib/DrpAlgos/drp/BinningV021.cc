@@ -67,12 +67,12 @@ extern "C" __global__ void drp_kernel(DrpKernelCtx ctx) {
       const auto shape = params.at("in_shape").get<std::vector<unsigned long long>>();
       const auto bin   = params.at("bin").get<std::vector<unsigned long long>>();
       if (shape.size() != 3 || bin.size() != 3) {
-        throw std::invalid_argument("Binning 0.2.0: in_shape and bin must have 3 entries");
+        throw std::invalid_argument("Binning 0.2.1: in_shape and bin must have 3 entries");
       }
       std::size_t n { 1 };
       for (std::size_t d = 0; d < 3; ++d) {
         if (bin[d] == 0 || shape[d] % bin[d] != 0) {
-          throw std::invalid_argument("Binning 0.2.0: in_shape must be divisible by bin in every dimension");
+          throw std::invalid_argument("Binning 0.2.1: in_shape must be divisible by bin in every dimension");
         }
         n *= shape[d] / bin[d];
       }
@@ -83,6 +83,6 @@ extern "C" __global__ void drp_kernel(DrpKernelCtx ctx) {
     std::size_t m_payloadSize { 0 };
   };
 
-  REGISTER_KERNEL("Binning", 0, 2, 0, BinningJIT)
+  REGISTER_KERNEL("Binning", 0, 2, 1, BinningJIT)
 
 } // anonymous namespace
