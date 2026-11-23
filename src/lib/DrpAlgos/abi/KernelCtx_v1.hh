@@ -121,7 +121,7 @@ namespace DrpAlgos::abi::v1 {
    */
   __device__ inline void drp_commit(const DrpKernelCtx& ctx,
                                     const DrpResult& result) {
-    if (ctx.gate && *ctx.gate != 1) {
+    if (ctx.gate && *ctx.gate != kGateActive) {
       return; // Inactive/blocked event
     }
 
