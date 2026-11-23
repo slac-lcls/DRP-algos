@@ -1,0 +1,6 @@
+#include "DrpAlgos/drp/BuildInfo.hh"
+
+namespace DrpAlgos {
+  // Will be filled in by meson.build command
+  const char* gitBuildVersion() { return "@DRPALGOS_VCS@"; }
+} // namespace DrpAlgos

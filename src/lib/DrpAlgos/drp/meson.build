@@ -1,6 +1,7 @@
 # Install the headers for usage
 
 install_headers(
+    'BuildInfo.hh',
     'JITKernelDescriptor.hh',
     'KernelDescriptor.hh',
     'KernelRegistry.hh',

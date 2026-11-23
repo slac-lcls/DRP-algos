@@ -1,9 +1,19 @@
+build_info_cc = vcs_tag(
+    input: 'drp/BuildInfo.cc.in',
+    output: 'BuildInfo.cc',
+    replace_string: '@DRPALGOS_VCS@',
+    command: [
+        'git', '-C', meson.project_source_root(), 'describe', '--tags', '--always', '--dirty'
+    ],
+    fallback: meson.project_version(),
+)
+
 DrpAlgosCore_lib = shared_library(
     'DrpAlgosCore',
     [
         'drp/KernelRegistry.cc',
         'drp/Launch.cu',
-    ],
+    ] + build_info_cc,
     include_directories: [drp_algos_include],
     install: true,
     install_rpath: lib_install_rpath,

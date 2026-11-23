@@ -1,6 +1,7 @@
 #include "DrpAlgos/drp/JITKernelDescriptor.hh"
 
 #include "DrpAlgos/KernelCtx.hh"
+#include "DrpAlgos/drp/BuildInfo.hh"
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -29,6 +30,21 @@ namespace DrpAlgos {
     CUlibrary library { nullptr }; ///< Never unloaded: lives for the process (like dlopen'd libs)
     CUkernel kernel { nullptr };   ///< Context-independent handle (usable on green-context streams)
   };
+
+  const char* jitNvrtcVersion() {
+    auto get_ver = [] () {
+      int major { 0 };
+      int minor { 0 };
+
+      nvrtcVersion(&major, &minor);
+
+      return std::to_string(major) + "." + std::to_string(minor);
+    };
+
+    const static std::string version { get_ver() };
+
+    return version.c_str();
+  }
 
   namespace {
     /// --- Error checking --- ///
