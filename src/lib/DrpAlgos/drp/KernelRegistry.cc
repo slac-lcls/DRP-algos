@@ -23,7 +23,8 @@ namespace DrpAlgos {
       return;
     }
 
-    m_factories.emplace(std::move(key), std::move(factory));
+    m_factories.emplace(key, std::move(factory));
+    m_origin.emplace(std::move(key), m_loading);
   }
 
   std::shared_ptr<IKernelDescriptor> KernelRegistry::create(const std::string& name,
@@ -38,27 +39,7 @@ namespace DrpAlgos {
       throw std::runtime_error(err->second);
     }
 
-    if (!m_libs.count(soname)) {
-      m_pendingErrors.clear();
-
-      void* handle = dlopen(soname.c_str(), RTLD_NOW | RTLD_LOCAL);
-      if (!handle) {
-        throw std::runtime_error("dlopen('" + soname + "') failed: " + dlerror());
-      }
-      m_libs.emplace(soname, handle);
-
-      if (!m_pendingErrors.empty()) {
-        std::ostringstream msg;
-        msg << "Errors registering kernels from '" << soname << "':";
-        for (const auto& e : m_pendingErrors) {
-          msg << "\n  - " << e;
-        }
-
-        m_libErrors.emplace(soname, msg.str());
-        m_pendingErrors.clear();
-        throw std::runtime_error(m_libErrors.at(soname));
-      }
-    }
+    load(soname);
 
     auto it = m_factories.find(Key { name, version });
     if (it == m_factories.end()) {
@@ -73,6 +54,12 @@ namespace DrpAlgos {
       throw std::runtime_error(msg.str());
     }
 
+    const auto& origin { m_origin.at(it->first) };
+    if (!origin.empty() && origin != soname) {
+      throw std::runtime_error("'" + name + "'" + version.toString() + " is provided by " +
+                               "'" + origin + "' not '" + soname + "'!");
+    }
+
     auto desc = it->second();
     if (!desc) {
       throw std::runtime_error("Factory for '" + name + "' " +
@@ -80,6 +67,40 @@ namespace DrpAlgos {
     }
 
     return desc;
+  }
+
+  void KernelRegistry::load(const std::string& soname) {
+    auto err = m_libErrors.find(soname);
+    if (err != m_libErrors.end()) {
+      throw std::runtime_error(err->second);
+    }
+
+    if (m_libs.count(soname)) {
+      return;
+    }
+
+    m_pendingErrors.clear();
+    m_loading = soname;
+
+    void* handle = dlopen(soname.c_str(), RTLD_NOW | RTLD_LOCAL);
+    m_loading.clear();
+
+    if (!handle) {
+      throw std::runtime_error("dlopen('" + soname + "') failed: " + dlerror());
+    }
+    m_libs.emplace(soname, handle);
+
+    if (!m_pendingErrors.empty()) {
+      std::ostringstream msg;
+      msg << "Errors registering kernels from '" << soname << "':";
+      for (const auto& e : m_pendingErrors) {
+        msg << "\n  - " << e;
+      }
+
+      m_libErrors.emplace(soname, msg.str());
+      m_pendingErrors.clear();
+      throw std::runtime_error(m_libErrors.at(soname));
+    }
   }
 
   std::vector<std::pair<std::string, Version>> KernelRegistry::registered() const {

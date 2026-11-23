@@ -62,6 +62,14 @@ namespace DrpAlgos {
                                               const std::string& soname);
 
     /**
+     * `dlopen` the requested shared library and register its respective kernels.
+     *
+     * @param[in] soname The library to dlopen.
+     * @throws runtime_error On registration error
+     */
+    void load(const std::string& soname);
+
+    /**
      * Retrieve the list of all registered algorithms.
      *
      * @returns A vector of (name, Version) pairs of all registered algorithms.
@@ -79,9 +87,11 @@ namespace DrpAlgos {
     using Key = std::pair<std::string, Version>;
 
     std::map<Key, KernelFactoryFn> m_factories;     ///< Factories to create descriptors of algorithms
+    std::map<Key, std::string> m_origin;            ///< The soname used to register a descriptor/kernel
     std::map<std::string, void*> m_libs;            ///< Map of loaded shared libraries (soname: handle)
     std::map<std::string, std::string> m_libErrors; ///< Errors when loading a shared library
     std::vector<std::string> m_pendingErrors;       ///< Hold on to the errors in the interim as cannot throw during load
+    std::string m_loading;                          ///< The soname currently being dlopened
   };
 
   /**

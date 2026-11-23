@@ -196,6 +196,11 @@ endif
 
 subdir('src')
 
+build_tests_opt = get_option('build_tests')
+if build_tests_opt
+    subdir('tests')
+endif
+
 # Setup pkg-config for simplicity, AFTER the subdirs are traversed
 pkg = import('pkgconfig')
 pc_libs = [DrpAlgosCore_lib, DrpAlgosJit_lib]

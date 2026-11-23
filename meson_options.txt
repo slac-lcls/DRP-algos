@@ -10,3 +10,9 @@ option(
     value: ['0', '1',],
     description: 'Select which DrpKernelCtx ABI libraries to build.',
 )
+option(
+    'build_tests',
+    type: 'boolean',
+    value: false,
+    description: 'Build the tests.',
+)
