@@ -26,6 +26,10 @@ namespace DrpAlgos {
                       unsigned long long fixedSize,
                       unsigned long long seqStride,
                       cudaStream_t stream) {
+    if (ctx.abi != LatestCtx::kABI) {
+      throw std::invalid_argument("recordFinalize: host ctx.abi must be LatestCtx::kABI");
+    }
+
     drpFinalize<<<1, 1, 0, stream>>>(ctx, fixedSize, seqStride);
     check("recordFinalize");
   }

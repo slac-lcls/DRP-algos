@@ -36,6 +36,10 @@ namespace DrpAlgos {
   inline void launchAnyAbi(IKernelDescriptor& desc,
                            const LatestCtx& host_ctx,
                            cudaStream_t stream) {
+    if (host_ctx.abi != LatestCtx::kABI) {
+      throw std::invalid_argument("launchAnyAbi: host ctx.abi must be LatestCtx::kABI");
+    }
+
     switch (desc.ctxAbi()) {
     case 1: {
       desc.launch(&host_ctx, stream);
