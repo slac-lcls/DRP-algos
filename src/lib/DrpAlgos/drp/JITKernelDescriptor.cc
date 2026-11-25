@@ -272,7 +272,14 @@ namespace DrpAlgos {
 
     std::shared_ptr<const JITKernel> compileAndLoad(const std::string& program,
                                                     const std::string& entry,
-                                                    const std::vector<JITHeader>& extraHeaders) {
+                                                    const std::vector<JITHeader>& extraHeaders,
+                                                    std::uint32_t abi) {
+      const auto abi_s { std::to_string(abi) };
+
+      if (abi > DRP_KERNEL_CTX_ABI_LATEST) {
+        throw std::runtime_error("JITKernelDescriptor: Unknown ABI version " + abi_s);
+      }
+
       int dev { 0 };
       int major { 0 };
       int minor { 0 };
@@ -285,6 +292,7 @@ namespace DrpAlgos {
       const std::vector<std::string> opts {
         "-arch=sm_" + std::to_string(major) + std::to_string(minor),
         "-std=c++20",
+        "-DDRP_KERNEL_CTX_ABI=" + abi_s,
       };
 
       std::string key;
@@ -338,12 +346,6 @@ namespace DrpAlgos {
       for (const auto& o : opts) {
         cOpts.push_back(o.c_str());
       }
-
-      // Pass along the ABI version information
-      const std::string abiOpt {
-        "-DDRP_KERNEL_CTX_ABI=" + std::to_string(DRP_KERNEL_CTX_ABI)
-      };
-      cOpts.push_back(abiOpt.c_str());
 
       const nvrtcResult res {
         nvrtcCompileProgram(prog, static_cast<int>(cOpts.size()), cOpts.data())
@@ -413,7 +415,7 @@ namespace DrpAlgos {
     const std::string program {
       makePrelude(params) + "#line 1 \"" + src.entry + ".cu\"\n" + src.code
     };
-    m_kernel = compileAndLoad(program, src.entry, src.headers);
+    m_kernel = compileAndLoad(program, src.entry, src.headers, ctxAbi());
 
     int dev { 0 };
     int sms { 0 };

@@ -53,6 +53,8 @@ extern "C" __global__ void drp_kernel(DrpKernelCtx ctx) {
   public:
     std::size_t payloadSize() const override { return m_payloadSize; }
 
+    std::uint32_t ctxAbi() const override { return DrpKernelCtx::kABI; }
+
   protected:
     DrpAlgos::JITSource source() const override {
       return {

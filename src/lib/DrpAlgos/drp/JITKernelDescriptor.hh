@@ -67,8 +67,6 @@ namespace DrpAlgos {
      */
     static std::string makePrelude(const nlohmann::json& params);
 
-    std::uint32_t ctxAbi() const override { return DRP_KERNEL_CTX_ABI; } // From header, via build args
-
   protected:
     /**
      * The kernel source code.
