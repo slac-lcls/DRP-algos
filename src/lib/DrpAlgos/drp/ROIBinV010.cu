@@ -487,7 +487,7 @@ namespace {
       m_nWorkers = nWorkers;
     }
 
-    void launch(DrpKernelCtx ctx, cudaStream_t stream) override {
+    void launchTyped(const DrpCtx& ctx, cudaStream_t stream) override {
       if (m_nextWorker >= m_nWorkers) {
         throw std::runtime_error("[ROIBin 0.1.0] More launches than Reducer workers.");
       }

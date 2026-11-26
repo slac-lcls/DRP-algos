@@ -1,6 +1,7 @@
 #include "DrpAlgos/drp/JITKernelDescriptor.hh"
 
-#include "DrpAlgos/drp/KernelCtx.hh"
+#include "DrpAlgos/KernelCtx.hh"
+#include "DrpAlgos/drp/BuildInfo.hh"
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -19,14 +20,31 @@
 
 namespace DrpAlgos {
   /**
-   * Embedded contents of KernelCtx.hh.
+   * Embedded contents of KernelCtx.hh and ABI version implementations
    */
   extern const char* const kDrpKernelCtxHeaderSource;
+  extern const char* const kDrpKernelCtxV0HeaderSource;
+  extern const char* const kDrpKernelCtxV1HeaderSource;
 
   struct JITKernel {
     CUlibrary library { nullptr }; ///< Never unloaded: lives for the process (like dlopen'd libs)
     CUkernel kernel { nullptr };   ///< Context-independent handle (usable on green-context streams)
   };
+
+  const char* jitNvrtcVersion() {
+    auto get_ver = [] () {
+      int major { 0 };
+      int minor { 0 };
+
+      nvrtcVersion(&major, &minor);
+
+      return std::to_string(major) + "." + std::to_string(minor);
+    };
+
+    const static std::string version { get_ver() };
+
+    return version.c_str();
+  }
 
   namespace {
     /// --- Error checking --- ///
@@ -254,7 +272,14 @@ namespace DrpAlgos {
 
     std::shared_ptr<const JITKernel> compileAndLoad(const std::string& program,
                                                     const std::string& entry,
-                                                    const std::vector<JITHeader>& extraHeaders) {
+                                                    const std::vector<JITHeader>& extraHeaders,
+                                                    std::uint32_t abi) {
+      const auto abi_s { std::to_string(abi) };
+
+      if (abi > DRP_KERNEL_CTX_ABI_LATEST) {
+        throw std::runtime_error("JITKernelDescriptor: Unknown ABI version " + abi_s);
+      }
+
       int dev { 0 };
       int major { 0 };
       int minor { 0 };
@@ -267,6 +292,7 @@ namespace DrpAlgos {
       const std::vector<std::string> opts {
         "-arch=sm_" + std::to_string(major) + std::to_string(minor),
         "-std=c++20",
+        "-DDRP_KERNEL_CTX_ABI=" + abi_s,
       };
 
       std::string key;
@@ -287,8 +313,17 @@ namespace DrpAlgos {
       }
 
       nvrtcProgram prog;
-      std::vector<const char*> headers { kDrpKernelCtxHeaderSource };
-      std::vector<const char*> includeNames { "DrpAlgos/drp/KernelCtx.hh" };
+      std::vector<const char*> headers {
+        kDrpKernelCtxHeaderSource,
+        kDrpKernelCtxV0HeaderSource,
+        kDrpKernelCtxV1HeaderSource
+      };
+      std::vector<const char*> includeNames {
+        "DrpAlgos/KernelCtx.hh",
+        // And the actual ABI implementations
+        "DrpAlgos/abi/KernelCtx_v0.hh",
+        "DrpAlgos/abi/KernelCtx_v1.hh"
+      };
       for (const auto& h : extraHeaders) {
         headers.push_back(h.source);
         includeNames.push_back(h.name);
@@ -366,7 +401,9 @@ namespace DrpAlgos {
     return os.str();
   }
 
-  void JITKernelDescriptor::configure(const nlohmann::json& params) {
+  //void JITKernelDescriptor::configure(const nlohmann::json& params) {
+  void JITKernelDescriptor::configure(const char* paramsStr, std::size_t paramsLen) {
+    const auto params = nlohmann::json::parse(paramsStr, paramsStr + paramsLen);
     onConfigure(params);
 
     const JITSource src { source() };
@@ -378,7 +415,7 @@ namespace DrpAlgos {
     const std::string program {
       makePrelude(params) + "#line 1 \"" + src.entry + ".cu\"\n" + src.code
     };
-    m_kernel = compileAndLoad(program, src.entry, src.headers);
+    m_kernel = compileAndLoad(program, src.entry, src.headers, ctxAbi());
 
     int dev { 0 };
     int sms { 0 };
@@ -388,13 +425,13 @@ namespace DrpAlgos {
     m_defaultGrid = 4u * static_cast<unsigned>(sms);
   }
 
-  void JITKernelDescriptor::launch(DrpKernelCtx ctx, cudaStream_t stream) {
+  void JITKernelDescriptor::launch(const void* ctx, cudaStream_t stream) {
     if (!m_kernel) {
       throw std::logic_error("JITKernelDescriptor::launch() called before configure()");
     }
 
-    ctx.params = nullptr; // Parameters are compiled in
-    void* args[] = { &ctx };
+    // ctx.params = nullptr; // Parameters are compiled in
+    void* args[] = { const_cast<void*>(ctx) };
     check(cuLaunchKernel(reinterpret_cast<CUfunction>(m_kernel->kernel), // CUkernel is accepted here
                          gridSize(), 1, 1,
                          blockSize(), 1, 1,

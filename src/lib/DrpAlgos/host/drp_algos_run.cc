@@ -52,7 +52,7 @@ namespace {
 
   void usage() {
     const std::string help_msg { R"help(
-drp-algos-run --alg <alg_name> --version <version> [--soname libDrpAlgos.so]
+drp-algos-run --alg <alg_name> --version <version> [--soname libDrpAlgos.abiV1.so]
               --params <params.json>
               --frame-shape <frame shape>
               [--events N] [--workers W] [--slots K] [--bench N] [--max-delay-us D]
@@ -102,7 +102,7 @@ int main(int argc, char** argv) {
 
     const std::string alg { need(args, "alg") };
     const auto version { DrpAlgos::Version::parse(need(args, "version")) };
-    const std::string soname { opt(args, "soname", "libDrpAlgos.so") };
+    const std::string soname { opt(args, "soname", "libDrpAlgos.abiV1.so") };
 
     std::ifstream pf(need(args, "params"));
     if (!pf) {

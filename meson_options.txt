@@ -1,4 +1,18 @@
-option('conda_prefix',
+option(
+    'conda_prefix',
     type: 'string',
     description: 'Path to conda env directory',
+)
+option(
+    'ctx_abis',
+    type: 'array',
+    choices: ['0', '1',],
+    value: ['0', '1',],
+    description: 'Select which DrpKernelCtx ABI libraries to build.',
+)
+option(
+    'build_tests',
+    type: 'boolean',
+    value: false,
+    description: 'Build the tests.',
 )

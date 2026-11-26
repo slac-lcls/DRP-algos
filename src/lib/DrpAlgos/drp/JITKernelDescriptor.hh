@@ -1,7 +1,7 @@
 #ifndef DRP_ALGOS_DRP_JIT_KERNEL_DESCRIPTOR_HH
 #define DRP_ALGOS_DRP_JIT_KERNEL_DESCRIPTOR_HH
 
-#include "DrpAlgos/drp/KernelCtx.hh"
+#include "DrpAlgos/KernelCtx.hh"
 #include "DrpAlgos/drp/KernelDescriptor.hh"
 #include "DrpAlgos/export_macro.hh" // DRP_ALGOS_API for non-hidden symbols
 
@@ -43,8 +43,9 @@ namespace DrpAlgos {
    */
   class DRP_ALGOS_API JITKernelDescriptor : public IKernelDescriptor {
   public:
-    void configure(const nlohmann::json& params) final;
-    void launch(DrpKernelCtx ctx, cudaStream_t stream) final;
+    void configure(const char* params, std::size_t paramsLen) final;
+
+    void launch(const void* ctx, cudaStream_t stream) final;
 
     /**
      * Construct the prelude for baking parameters into the kernel.

@@ -207,7 +207,7 @@ def side_by_side(
 # Taken from Mikhail's stack_3x2_asics in psana
 # - Top row (ASICs A0-A2) is flipped left-right
 # - Bottom row (ASICs A3-A5) is flipped up-down.
-EPIXUHR_3X2_PANEL: PanelLayout = PanelLayout(
+EPIXUHR_3X2_PANEL_ASIC_MAJOR: PanelLayout = PanelLayout(
     asic_shape=(168, 192),
     grid=(2, 3),
     placements=(
@@ -218,6 +218,15 @@ EPIXUHR_3X2_PANEL: PanelLayout = PanelLayout(
         AsicPlacement(4, True, False),
         AsicPlacement(5, True, False),
     ),
+)
+
+
+# Beginning with firmware v5.X.Y a reordered panel is DMA'd directly
+# -> So, standard row-major configuration. No ASIC reordering required
+EPIXUHR_3X2_PANEL: PanelLayout = PanelLayout(
+    asic_shape=(336, 576),
+    grid=(1, 1),
+    placements=(AsicPlacement(0, False, False),),  # Assume DAQ flips properly
 )
 
 

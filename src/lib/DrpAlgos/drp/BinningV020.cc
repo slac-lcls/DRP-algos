@@ -16,7 +16,7 @@ namespace {
   // Parameters arrive as compile-time constants in namespace jit_params:
   //   in_shape(i), in_shape_size, bin(i), bin_size, scale
   constexpr const char* kBinningSource = R"cuda(
-#include "DrpAlgos/drp/KernelCtx.hh"
+#include "DrpAlgos/KernelCtx.hh"
 #include "DrpAlgos/algorithms/binning.cuh"
 
 using namespace jit_params;
@@ -52,6 +52,8 @@ extern "C" __global__ void drp_kernel(DrpKernelCtx ctx) {
   class BinningJIT final : public DrpAlgos::JITKernelDescriptor {
   public:
     std::size_t payloadSize() const override { return m_payloadSize; }
+
+    std::uint32_t ctxAbi() const override { return DrpKernelCtx::kABI; }
 
   protected:
     DrpAlgos::JITSource source() const override {
